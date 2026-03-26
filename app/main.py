@@ -199,32 +199,34 @@ XERO_TENANT_ID=&lt;paste one tenant id from above&gt;</pre>
     )
 
 
+def _bridge_auth_token_value() -> str:
+    """Token for ?token= gate — must not depend on full Settings() succeeding."""
+    try:
+        return (get_settings().bridge_auth_token or "").strip()
+    except Exception:
+        return (os.getenv("BRIDGE_AUTH_TOKEN") or "").strip()
+
+
 @app.get("/")
 def index_page(request: Request):
     """Serve UI; if BRIDGE_AUTH_TOKEN is set, accept ?token= once to set session then redirect."""
     index_path = STATIC_DIR / "index.html"
     if not index_path.is_file():
         raise HTTPException(status_code=404, detail="UI not found (static/index.html)")
-    try:
-        s = get_settings()
-        t = (s.bridge_auth_token or "").strip()
-        if t:
-            raw = request.query_params.get("token")
-            if raw is not None:
-                if secrets.compare_digest(raw.strip(), t):
-                    request.session["bridge_authenticated"] = True
-                    from urllib.parse import urlencode
+    t = _bridge_auth_token_value()
+    if t:
+        raw = request.query_params.get("token")
+        if raw is not None:
+            if secrets.compare_digest(raw.strip(), t):
+                request.session["bridge_authenticated"] = True
+                from urllib.parse import urlencode
 
-                    pairs = [(k, v) for k, v in request.query_params.multi_items() if k != "token"]
-                    target = "/"
-                    if pairs:
-                        target += "?" + urlencode(pairs)
-                    return RedirectResponse(url=target, status_code=302)
-                raise HTTPException(status_code=401, detail="Invalid token")
-    except HTTPException:
-        raise
-    except Exception:
-        pass
+                pairs = [(k, v) for k, v in request.query_params.multi_items() if k != "token"]
+                target = "/"
+                if pairs:
+                    target += "?" + urlencode(pairs)
+                return RedirectResponse(url=target, status_code=302)
+            raise HTTPException(status_code=401, detail="Invalid token")
     return FileResponse(index_path)
 
 

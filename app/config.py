@@ -7,7 +7,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    hubspot_access_token: str
+    # Empty is allowed at boot (e.g. Railway env not yet set); APIs check before calling HubSpot.
+    hubspot_access_token: str = ""
 
     # Set false until you create the custom deal properties in HubSpot (see .env.example)
     hubspot_deal_sync_enabled: bool = True
