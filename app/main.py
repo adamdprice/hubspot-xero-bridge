@@ -28,7 +28,9 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 app = FastAPI(title="HubSpot–Xero bridge", version="0.2.0")
 
-# Session cookie (for BRIDGE_AUTH_TOKEN gate) — must wrap first so later middleware sees request.session
+# Starlette inserts each add_middleware at index 0, so last-added is outermost on the request path.
+# Session must run before BridgeAuth (which reads request.session).
+app.add_middleware(BridgeAuthMiddleware)
 app.add_middleware(
     SessionMiddleware,
     secret_key=session_secret_key(),
@@ -36,7 +38,6 @@ app.add_middleware(
     same_site="lax",
     https_only=cookie_https_only(),
 )
-app.add_middleware(BridgeAuthMiddleware)
 
 # Short-lived CSRF state for OAuth (in production, use signed cookies or server-side session store)
 _oauth_states: dict[str, float] = {}
