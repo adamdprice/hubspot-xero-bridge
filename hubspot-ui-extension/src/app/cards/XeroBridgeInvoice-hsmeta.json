@@ -1,0 +1,11 @@
+{
+  "uid": "xero_bridge_invoice_tab",
+  "type": "card",
+  "config": {
+    "name": "Xero invoice bridge",
+    "description": "Launch the Xero draft-invoice bridge for this deal (hosted separately).",
+    "location": "crm.record.tab",
+    "entrypoint": "/app/cards/XeroBridgeInvoice.jsx",
+    "objectTypes": ["DEALS"]
+  }
+}

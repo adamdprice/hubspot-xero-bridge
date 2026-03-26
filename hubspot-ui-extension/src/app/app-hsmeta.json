@@ -1,0 +1,26 @@
+{
+  "uid": "xero_bridge_ui_app",
+  "type": "app",
+  "config": {
+    "description": "Opens the HubSpot–Xero bridge from deal records (central tab). Install the Python bridge separately and set its public HTTPS URL in the card source.",
+    "name": "Xero bridge launcher",
+    "distribution": "private",
+    "auth": {
+      "type": "static",
+      "requiredScopes": ["crm.objects.deals.read"],
+      "optionalScopes": [],
+      "conditionallyRequiredScopes": []
+    },
+    "permittedUrls": {
+      "fetch": ["https://api.hubapi.com"],
+      "iframe": [],
+      "img": []
+    },
+    "support": {
+      "supportEmail": "support@example.com",
+      "documentationUrl": "https://developers.hubspot.com/docs/apps/developer-platform/add-features/ui-extensibility/app-cards/create-an-app-card",
+      "supportUrl": "https://www.hubspot.com",
+      "supportPhone": "+18005555555"
+    }
+  }
+}

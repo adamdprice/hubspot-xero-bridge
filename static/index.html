@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HubSpot → Xero</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet" />
+  <style>
+    /* Xero-inspired: cerulean blue, light shell, white cards (brand blues ~#06b3e8 / #00B9E9) */
+    :root {
+      --xero-blue: #06b3e8;
+      --xero-blue-dark: #0090c4;
+      --xero-blue-soft: #e6f7fc;
+      --page-bg: #f0f2f5;
+      --card-bg: #ffffff;
+      --text: #1a1c1f;
+      --text-muted: #6a6e74;
+      --border: #d0d4d8;
+      --border-light: #e8eaed;
+      --success: #0d8050;
+      --success-bg: #e8f5ee;
+      --error: #c23030;
+      --error-bg: #fce8e8;
+      --warn-bg: #fff8e6;
+      --warn-border: #f5d76e;
+      --radius: 4px;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 2px 8px rgba(0, 0, 0, 0.04);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--page-bg);
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.45;
+    }
+    .app-header {
+      background: linear-gradient(180deg, #05a6d6 0%, var(--xero-blue) 100%);
+      color: #fff;
+      padding: 0.65rem 0;
+      box-shadow: 0 1px 0 rgba(0,0,0,0.08);
+    }
+    .app-header .wrap { padding-top: 0; padding-bottom: 0; max-width: 720px; }
+    .app-header h1 {
+      font-size: 1.125rem;
+      font-weight: 700;
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+    .app-header .tagline { margin: 0.2rem 0 0; font-size: 0.8125rem; opacity: 0.92; font-weight: 400; }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+    .app-header .wrap { padding: 0.65rem 1.25rem; }
+    .page-title { font-size: 1.25rem; font-weight: 700; margin: 0 0 0.35rem; color: var(--text); }
+    .sub { color: var(--text-muted); font-size: 0.9375rem; margin-bottom: 1.25rem; line-height: 1.5; }
+    .banner {
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius);
+      border: 1px solid var(--border-light);
+      background: var(--card-bg);
+      margin-bottom: 1rem;
+      font-size: 0.875rem;
+      box-shadow: var(--shadow);
+    }
+    .banner.warn { background: var(--warn-bg); border-color: var(--warn-border); color: #5c4a00; }
+    .banner.ok { background: var(--success-bg); border-color: #b8e0cc; color: #0d4a2e; }
+    .banner a { color: var(--xero-blue-dark); font-weight: 600; }
+    .stepper {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.25rem;
+      margin-bottom: 1.25rem;
+      padding: 0.75rem 0.5rem;
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      border: 1px solid var(--border-light);
+      box-shadow: var(--shadow);
+    }
+    .step-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 0.35rem;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+      min-width: 0;
+    }
+    .step-item .step-num {
+      width: 1.75rem;
+      height: 1.75rem;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 700;
+      background: #fff;
+      border: 2px solid var(--border);
+      color: var(--text-muted);
+    }
+    .step-item.step-complete .step-num {
+      background: var(--xero-blue);
+      border-color: var(--xero-blue);
+      color: #fff;
+    }
+    .step-item.step-current {
+      color: var(--xero-blue-dark);
+    }
+    .step-item.step-current .step-num {
+      background: var(--xero-blue-soft);
+      border-color: var(--xero-blue);
+      color: var(--xero-blue-dark);
+      box-shadow: 0 0 0 2px rgba(6, 179, 232, 0.25);
+    }
+    .step-item.step-todo .step-num { opacity: 0.85; }
+    .panel {
+      background: var(--card-bg);
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.35rem;
+      margin-bottom: 1rem;
+      box-shadow: var(--shadow);
+    }
+    .panel.success-panel {
+      border-color: #b8e0cc;
+      background: var(--success-bg);
+    }
+    .panel.success-panel h2 { color: var(--success); margin-bottom: 0.5rem; font-size: 1.125rem; }
+    .panel h2 { font-size: 1rem; font-weight: 700; margin: 0 0 0.85rem; color: var(--text); }
+    label { font-size: 0.8125rem; font-weight: 600; color: var(--text); display: block; margin-bottom: 0.35rem; }
+    input[type="search"], input[type="number"], input[type="text"] {
+      width: 100%;
+      padding: 0.5rem 0.65rem;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--text);
+      font-size: 0.9375rem;
+      font-family: inherit;
+    }
+    input::placeholder { color: #9ca3af; }
+    textarea {
+      width: 100%;
+      min-height: 4rem;
+      padding: 0.5rem 0.65rem;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--text);
+      font-size: 0.9375rem;
+      font-family: inherit;
+      resize: vertical;
+    }
+    textarea:focus, input:focus {
+      outline: none;
+      border-color: var(--xero-blue);
+      box-shadow: 0 0 0 2px rgba(6, 179, 232, 0.25);
+    }
+    .row { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: flex-end; }
+    .row input[type="number"] { flex: 1; min-width: 120px; }
+    button {
+      font-family: inherit;
+      font-weight: 600;
+      font-size: 0.875rem;
+      padding: 0.5rem 1rem;
+      border-radius: var(--radius);
+      border: none;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary {
+      background: var(--xero-blue);
+      color: #fff;
+      border: 1px solid transparent;
+    }
+    .btn-primary:hover:not(:disabled) { background: var(--xero-blue-dark); }
+    .btn-ghost {
+      background: #fff;
+      color: var(--xero-blue-dark);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover:not(:disabled) { background: var(--xero-blue-soft); border-color: var(--xero-blue); }
+    .hint { font-size: 0.8125rem; color: var(--text-muted); margin-top: 0.65rem; line-height: 1.45; }
+    .err { color: var(--error); font-size: 0.875rem; margin-top: 0.5rem; }
+    ul.results { list-style: none; padding: 0; margin: 0.5rem 0 0; }
+    ul.results li {
+      padding: 0.65rem 0.85rem;
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius);
+      margin-bottom: 0.4rem;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
+      background: #fafbfc;
+    }
+    ul.results li:hover { border-color: var(--xero-blue); background: var(--xero-blue-soft); }
+    ul.results li.selected { border-color: var(--xero-blue); background: var(--xero-blue-soft); box-shadow: 0 0 0 1px var(--xero-blue); }
+    .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.75rem; color: var(--text-muted); }
+    .toast {
+      position: fixed; bottom: 1rem; right: 1rem; max-width: 340px;
+      padding: 0.85rem 1rem; border-radius: var(--radius);
+      background: var(--card-bg); border: 1px solid var(--border);
+      font-size: 0.875rem; z-index: 50;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.12);
+    }
+    .toast.ok { border-left: 4px solid var(--success); }
+    .toast.bad { border-left: 4px solid var(--error); }
+    .kbd {
+      font-family: ui-monospace, monospace;
+      font-size: 0.78rem;
+      background: #eef0f2;
+      padding: 0.12rem 0.4rem;
+      border-radius: 3px;
+      border: 1px solid var(--border-light);
+      color: var(--text);
+    }
+    details { margin-top: 1.25rem; color: var(--text-muted); font-size: 0.875rem; }
+    details summary { cursor: pointer; color: var(--xero-blue-dark); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="wrap">
+      <h1>HubSpot → Xero</h1>
+      <p class="tagline">Create draft sales invoices from deals</p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <p class="page-title">New invoice</p>
+    <p class="sub">Select a HubSpot deal, choose the customer in Xero, then set the line — item code, account, and VAT come from your <span class="kbd">.env</span> file.</p>
+
+    <div id="banner"></div>
+
+    <div id="wizard-flow">
+    <div class="stepper" id="steps">
+      <div class="step-item step-current" id="step-label-1"><span class="step-num">1</span><span>Deal</span></div>
+      <div class="step-item step-todo" id="step-label-2"><span class="step-num">2</span><span>Billing</span></div>
+      <div class="step-item step-todo" id="step-label-3"><span class="step-num">3</span><span>Customer</span></div>
+      <div class="step-item step-todo" id="step-label-4"><span class="step-num">4</span><span>Line</span></div>
+    </div>
+
+    <div class="panel" id="panel-1">
+      <h2>1 — Find a deal</h2>
+      <label for="q">Search by name or paste deal ID</label>
+      <div class="row">
+        <input type="search" id="q" placeholder="Deal name or ID…" style="flex:1;min-width:200px" autocomplete="off" />
+        <button type="button" class="btn-primary" id="btn-search">Search</button>
+      </div>
+      <p class="hint">Uses your <span class="kbd">HUBSPOT_ACCESS_TOKEN</span> — no key is sent anywhere except HubSpot’s API from this app.</p>
+      <ul class="results" id="deal-results" hidden></ul>
+      <p class="err" id="deal-err" hidden></p>
+    </div>
+
+    <div class="panel" id="panel-2" hidden>
+      <h2>2 — Deal &amp; HubSpot billing</h2>
+      <div id="billing-summary"></div>
+      <button type="button" class="btn-ghost" id="btn-back-1">← Change deal</button>
+    </div>
+
+    <div class="panel" id="panel-3" hidden>
+      <h2>3 — Customer in Xero</h2>
+      <label for="xc-q">Search existing Xero contacts</label>
+      <div class="row">
+        <input type="search" id="xc-q" placeholder="Company or email…" style="flex:1" />
+        <button type="button" class="btn-primary" id="btn-xc-search">Search Xero</button>
+      </div>
+      <ul class="results" id="xc-results" hidden></ul>
+      <p class="err" id="xc-err" hidden></p>
+      <p class="hint" style="margin-top:0.75rem">Or create a new contact from the HubSpot company/contact above (uses email when present).</p>
+      <button type="button" class="btn-ghost" id="btn-create-hs">Create Xero contact from HubSpot</button>
+      <p class="hint" id="pick-hint" style="margin-top:0.5rem">Select a Xero contact in the list, or use the HubSpot button.</p>
+      <button type="button" class="btn-ghost" id="btn-back-2" style="margin-top:0.75rem">← Back</button>
+    </div>
+
+    <div class="panel" id="panel-4" hidden>
+      <h2>4 — Line description &amp; amount</h2>
+      <p class="hint" id="defaults-hint"></p>
+      <label for="line-desc">Line description (on the Xero invoice line)</label>
+      <textarea id="line-desc" rows="1" placeholder="Deal name or your own text…"></textarea>
+      <p class="hint">Starts as the deal name — you can change it before sending.</p>
+      <div class="row" style="margin-top:0.75rem">
+        <div style="flex:1;min-width:120px">
+          <label for="qty">Quantity</label>
+          <input type="number" id="qty" min="0.01" step="0.01" value="1" />
+        </div>
+        <div style="flex:2;min-width:160px">
+          <label for="unit">Unit amount (ex-VAT)</label>
+          <input type="number" id="unit" min="0.01" step="0.01" placeholder="From deal amount" />
+        </div>
+      </div>
+      <p class="hint" id="unit-prefill-hint"></p>
+      <p class="hint">Xero applies VAT from tax type <span class="kbd" id="tax-display"></span> on the line (adjust in <span class="kbd">.env</span> if totals look wrong).</p>
+      <button type="button" class="btn-primary" id="btn-create-inv" style="margin-top:0.75rem">Create draft invoice in Xero</button>
+      <p class="err" id="inv-err" hidden></p>
+      <button type="button" class="btn-ghost" id="btn-back-3" style="margin-top:0.75rem">← Back</button>
+    </div>
+    </div>
+
+    <div class="panel success-panel" id="panel-success" hidden>
+      <h2>Invoice created</h2>
+      <p>Your draft invoice is in Xero.</p>
+      <p class="mono" id="success-invoice-id" style="margin:0.75rem 0;word-break:break-all"></p>
+      <p class="hint" style="margin-top:1rem">Want to create another draft from a different deal?</p>
+      <button type="button" class="btn-primary" id="btn-another" style="margin-top:0.5rem">Create another invoice</button>
+    </div>
+
+    <details>
+      <summary>Why no refresh token in the Xero portal?</summary>
+      <p>Xero only returns a <strong>refresh token</strong> after you complete the OAuth browser flow. Click <strong>Connect Xero</strong> above, sign in, approve access — then copy the values from the success page into <span class="kbd">.env</span> and restart this app.</p>
+    </details>
+  </main>
+
+  <script>
+    let selectedDealId = null;
+    let selectedXeroContactId = null;
+    let useCreateFromHubspot = false;
+    let statusDefaults = {};
+    let billingDealName = "";
+    let billingDealAmount = null;
+
+    function toast(msg, ok) {
+      const el = document.createElement("div");
+      el.className = "toast " + (ok ? "ok" : "bad");
+      el.textContent = msg;
+      document.body.appendChild(el);
+      setTimeout(function () { el.remove(); }, 9000);
+    }
+
+    function setStep(n) {
+      for (var i = 1; i <= 4; i++) {
+        var el = document.getElementById("step-label-" + i);
+        if (!el) continue;
+        el.className = "step-item";
+        if (i < n) el.classList.add("step-complete");
+        else if (i === n) el.classList.add("step-current");
+        else el.classList.add("step-todo");
+      }
+    }
+
+    function showInvoiceSuccess(invoiceId) {
+      document.getElementById("wizard-flow").hidden = true;
+      document.getElementById("panel-success").hidden = false;
+      document.getElementById("success-invoice-id").textContent = "Xero invoice ID: " + invoiceId;
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    function resetWizard() {
+      selectedDealId = null;
+      selectedXeroContactId = null;
+      useCreateFromHubspot = false;
+      billingDealName = "";
+      billingDealAmount = null;
+      document.getElementById("q").value = "";
+      document.getElementById("deal-results").innerHTML = "";
+      document.getElementById("deal-results").hidden = true;
+      document.getElementById("deal-err").hidden = true;
+      document.getElementById("billing-summary").innerHTML = "";
+      document.getElementById("xc-q").value = "";
+      document.getElementById("xc-results").innerHTML = "";
+      document.getElementById("xc-results").hidden = true;
+      document.getElementById("xc-err").hidden = true;
+      document.getElementById("inv-err").hidden = true;
+      document.getElementById("panel-1").hidden = false;
+      document.getElementById("panel-2").hidden = true;
+      document.getElementById("panel-3").hidden = true;
+      document.getElementById("panel-4").hidden = true;
+      document.getElementById("panel-success").hidden = true;
+      document.getElementById("wizard-flow").hidden = false;
+      setStep(1);
+    }
+
+    async function loadStatus() {
+      var b = document.getElementById("banner");
+      try {
+        var res = await fetch("/api/status", { credentials: "include" });
+        var s = await res.json();
+        statusDefaults = s.defaults || {};
+        document.getElementById("tax-display").textContent = statusDefaults.tax_type || "—";
+        var dh = document.getElementById("defaults-hint");
+        if (dh && statusDefaults.item_code) {
+          dh.textContent = "Line will use item " + statusDefaults.item_code + ", account " + (statusDefaults.sales_account || "200") + ", tax " + (statusDefaults.tax_type || "") + ".";
+        }
+        if (!s.hubspot_configured) {
+          b.innerHTML = "<div class='banner warn'>Set <span class='kbd'>HUBSPOT_ACCESS_TOKEN</span> in <span class='kbd'>.env</span> and restart.</div>";
+          return;
+        }
+        if (!s.xero_oauth_ready) {
+          b.innerHTML = "<div class='banner warn'>Set <span class='kbd'>XERO_CLIENT_ID</span> and <span class='kbd'>XERO_CLIENT_SECRET</span> in <span class='kbd'>.env</span>.</div>";
+          return;
+        }
+        if (!s.xero_connected) {
+          b.innerHTML = "<div class='banner warn'>Xero is not connected yet. <a href='/auth/xero/start'>Connect Xero</a> — then add <span class='kbd'>XERO_REFRESH_TOKEN</span> and <span class='kbd'>XERO_TENANT_ID</span> from the success page.</div>";
+          return;
+        }
+        b.innerHTML = "<div class='banner ok'>HubSpot and Xero credentials loaded. Item / VAT defaults from <span class='kbd'>.env</span>.</div>";
+      } catch (e) {
+        b.innerHTML = "<div class='banner warn'>Could not load status.</div>";
+      }
+    }
+
+    function escapeHtml(s) {
+      var d = document.createElement("div");
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    function detailMessage(data) {
+      if (!data || typeof data !== "object") {
+        return "";
+      }
+      var d = data.detail;
+      if (typeof d === "string") {
+        return d;
+      }
+      if (Array.isArray(d) && d.length && d[0] && d[0].msg) {
+        return d.map(function (x) { return x.msg; }).join("; ");
+      }
+      try {
+        return JSON.stringify(d);
+      } catch (e) {
+        return String(d);
+      }
+    }
+
+    async function parseJsonResponse(res) {
+      var text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch (parseErr) {
+        var preview = text.replace(/\s+/g, " ").trim().slice(0, 280);
+        throw new Error(
+          "Response was not JSON (" + res.status + "): " + (preview || res.statusText || "empty body")
+        );
+      }
+    }
+
+    async function searchDeals() {
+      var query = document.getElementById("q").value.trim();
+      var list = document.getElementById("deal-results");
+      var err = document.getElementById("deal-err");
+      err.hidden = true;
+      if (!query) {
+        err.textContent = "Enter a search term or deal ID.";
+        err.hidden = false;
+        return;
+      }
+      list.hidden = true;
+      list.innerHTML = "";
+      try {
+        var res = await fetch("/api/deals/search?q=" + encodeURIComponent(query), { credentials: "include" });
+        var data = await res.json();
+        if (!res.ok) throw new Error(data.detail || res.statusText);
+        var deals = data.deals || [];
+        if (!deals.length) {
+          err.textContent = "No deals found.";
+          err.hidden = false;
+          return;
+        }
+        deals.forEach(function (d) {
+          var p = d.properties || {};
+          var li = document.createElement("li");
+          li.innerHTML = "<div><strong>" + escapeHtml(p.dealname || "(no name)") + "</strong><br><span class='mono'>" + d.id + "</span></div><span class='mono'>→</span>";
+          li.dataset.id = d.id;
+          li.addEventListener("click", function () { selectDeal(d.id); });
+          list.appendChild(li);
+        });
+        list.hidden = false;
+      } catch (e) {
+        err.textContent = e.message;
+        err.hidden = false;
+      }
+    }
+
+    async function selectDeal(id) {
+      selectedDealId = id;
+      document.querySelectorAll("#deal-results li").forEach(function (li) {
+        li.className = li.dataset.id === id ? "selected" : "";
+      });
+      document.getElementById("panel-1").hidden = true;
+      document.getElementById("panel-2").hidden = false;
+      setStep(2);
+      var sum = document.getElementById("billing-summary");
+      sum.innerHTML = "<p>Loading…</p>";
+      try {
+        var res = await fetch("/api/deals/" + encodeURIComponent(id) + "/billing", { credentials: "include" });
+        var data = await res.json();
+        if (!res.ok) throw new Error(data.detail || res.statusText);
+        var deal = data.deal || {};
+        billingDealName = (deal.name || "").trim();
+        var rawAmt = deal.amount;
+        if (rawAmt !== null && rawAmt !== undefined && rawAmt !== "") {
+          var parsed = parseFloat(String(rawAmt).replace(/,/g, ""));
+          billingDealAmount = isNaN(parsed) ? null : parsed;
+        } else {
+          billingDealAmount = null;
+        }
+        var html = "<p><strong>" + escapeHtml(deal.name || "Deal") + "</strong>";
+        if (billingDealAmount !== null) {
+          html += " · Deal amount: <strong>" + escapeHtml(String(deal.amount)) + "</strong>";
+        }
+        html += "</p>";
+        if (data.contact) {
+          html += "<p>Contact: " + escapeHtml(data.contact.name) + "<br><span class='mono'>" + escapeHtml(data.contact.email || "no email") + "</span></p>";
+        } else {
+          html += "<p><em>No contact on deal.</em></p>";
+        }
+        if (data.company) {
+          html += "<p>Company: " + escapeHtml(data.company.name) + "</p>";
+        } else {
+          html += "<p><em>No company on deal.</em></p>";
+        }
+        html += "<button type='button' class='btn-primary' id='btn-continue-billing'>Continue to Xero contact →</button>";
+        sum.innerHTML = html;
+        document.getElementById("btn-continue-billing").addEventListener("click", function () {
+          selectedXeroContactId = null;
+          useCreateFromHubspot = false;
+          document.getElementById("panel-2").hidden = true;
+          document.getElementById("panel-3").hidden = false;
+          document.getElementById("xc-results").hidden = true;
+          document.getElementById("xc-err").hidden = true;
+          setStep(3);
+        });
+      } catch (e) {
+        sum.innerHTML = "<p class='err'>" + escapeHtml(e.message) + "</p>";
+      }
+    }
+
+    document.getElementById("btn-search").addEventListener("click", searchDeals);
+    document.getElementById("q").addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter") searchDeals();
+    });
+
+    document.getElementById("btn-back-1").addEventListener("click", function () {
+      document.getElementById("panel-2").hidden = true;
+      document.getElementById("panel-1").hidden = false;
+      selectedDealId = null;
+      billingDealName = "";
+      billingDealAmount = null;
+      setStep(1);
+    });
+
+    async function searchXeroContacts() {
+      var q = document.getElementById("xc-q").value.trim();
+      var list = document.getElementById("xc-results");
+      var err = document.getElementById("xc-err");
+      err.hidden = true;
+      if (!q) {
+        err.textContent = "Enter a search term.";
+        err.hidden = false;
+        return;
+      }
+      list.hidden = true;
+      list.innerHTML = "";
+      try {
+        var res = await fetch("/api/xero/contacts/search?q=" + encodeURIComponent(q), { credentials: "include" });
+        var data = await parseJsonResponse(res);
+        if (!res.ok) throw new Error(detailMessage(data) || res.statusText);
+        var contacts = data.contacts || [];
+        if (!contacts.length) {
+          err.textContent = "No contacts match. Try another term or create from HubSpot.";
+          err.hidden = false;
+          return;
+        }
+        contacts.forEach(function (c) {
+          var li = document.createElement("li");
+          li.innerHTML = "<div><strong>" + escapeHtml(c.name || "") + "</strong><br><span class='mono'>" + escapeHtml(c.email || "") + "</span></div>";
+          li.dataset.id = c.id;
+          li.addEventListener("click", function () {
+            selectedXeroContactId = c.id;
+            useCreateFromHubspot = false;
+            document.querySelectorAll("#xc-results li").forEach(function (x) { x.className = ""; });
+            li.className = "selected";
+            goToAmount();
+          });
+          list.appendChild(li);
+        });
+        list.hidden = false;
+      } catch (e) {
+        err.textContent = e.message;
+        err.hidden = false;
+      }
+    }
+
+    document.getElementById("btn-xc-search").addEventListener("click", searchXeroContacts);
+
+    document.getElementById("btn-create-hs").addEventListener("click", function () {
+      selectedXeroContactId = null;
+      useCreateFromHubspot = true;
+      document.querySelectorAll("#xc-results li").forEach(function (x) { x.className = ""; });
+      goToAmount();
+    });
+
+    function goToAmount() {
+      document.getElementById("panel-3").hidden = true;
+      document.getElementById("panel-4").hidden = false;
+      document.getElementById("inv-err").hidden = true;
+      var lineDesc = document.getElementById("line-desc");
+      lineDesc.value = billingDealName || "";
+      var unitEl = document.getElementById("unit");
+      if (billingDealAmount !== null && !isNaN(billingDealAmount) && billingDealAmount > 0) {
+        unitEl.value = String(billingDealAmount);
+        document.getElementById("unit-prefill-hint").textContent =
+          "Unit amount pre-filled from the deal’s Amount in HubSpot (edit if needed).";
+      } else {
+        unitEl.value = "";
+        document.getElementById("unit-prefill-hint").textContent =
+          billingDealAmount === 0
+            ? "Deal amount is 0 in HubSpot — enter the unit amount you want to invoice."
+            : "No deal amount in HubSpot — enter the unit amount manually.";
+      }
+      setStep(4);
+    }
+
+    document.getElementById("btn-back-2").addEventListener("click", function () {
+      document.getElementById("panel-3").hidden = true;
+      document.getElementById("panel-2").hidden = false;
+      setStep(2);
+    });
+
+    document.getElementById("btn-back-3").addEventListener("click", function () {
+      document.getElementById("panel-4").hidden = true;
+      document.getElementById("panel-3").hidden = false;
+      setStep(3);
+    });
+
+    document.getElementById("btn-create-inv").addEventListener("click", async function () {
+      var err = document.getElementById("inv-err");
+      err.hidden = true;
+      if (!selectedDealId) {
+        err.textContent = "No deal selected.";
+        err.hidden = false;
+        return;
+      }
+      var qty = parseFloat(document.getElementById("qty").value);
+      var unit = parseFloat(document.getElementById("unit").value);
+      if (!unit || unit <= 0) {
+        err.textContent = "Enter a valid unit amount.";
+        err.hidden = false;
+        return;
+      }
+      if (!selectedXeroContactId && !useCreateFromHubspot) {
+        err.textContent = "Select a Xero contact or choose “Create from HubSpot”.";
+        err.hidden = false;
+        return;
+      }
+      try {
+        var res = await fetch("/api/invoices/manual", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            deal_id: selectedDealId,
+            unit_amount: unit,
+            quantity: qty || 1,
+            line_description: document.getElementById("line-desc").value.trim() || null,
+            xero_contact_id: selectedXeroContactId || null,
+            create_contact_from_hubspot: useCreateFromHubspot,
+          }),
+        });
+        var data = await res.json();
+        if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail || data));
+        showInvoiceSuccess(data.xero_invoice_id);
+      } catch (e) {
+        err.textContent = e.message;
+        err.hidden = false;
+        toast(e.message, false);
+      }
+    });
+
+    document.getElementById("btn-another").addEventListener("click", resetWizard);
+
+    (async function init() {
+      await loadStatus();
+      var params = new URLSearchParams(window.location.search);
+      var dealId =
+        params.get("deal_id") ||
+        params.get("deal") ||
+        params.get("hs_object_id");
+      if (dealId && /^\d+$/.test(String(dealId).trim())) {
+        await selectDeal(String(dealId).trim());
+      }
+    })();
+  </script>
+</body>
+</html>
