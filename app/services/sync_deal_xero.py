@@ -198,3 +198,52 @@ def process_deals_pending_xero_sync(settings: Settings, *, max_deals: int = 50) 
             }
         )
     return {"queued": len(rows), "results": results}
+
+
+def process_deals_with_xero_invoice_number_sync(
+    settings: Settings,
+    *,
+    max_deals: int = 500,
+) -> dict[str, Any]:
+    """
+    Find deals where the Xero invoice number field is set (HubSpot HAS_PROPERTY) and pull status from Xero.
+    Does not require xero_sync_trigger or sync_with_xero — for scheduled / cron sync.
+    """
+    prop = (settings.hubspot_deal_prop_xero_invoice_number or "").strip()
+    if not prop:
+        return {"queued": 0, "results": [], "error": "hubspot_deal_prop_xero_invoice_number is not configured"}
+
+    hs = HubSpotClient(settings.hubspot_access_token)
+    extra = deal_xero_sync_read_property_names(settings)
+    deal_ids: list[str] = []
+    after: Optional[str] = None
+    while len(deal_ids) < max_deals:
+        page_limit = min(100, max_deals - len(deal_ids))
+        batch, next_after = hs.search_deals_has_property(
+            prop,
+            extra_properties=extra,
+            limit=page_limit,
+            after=after,
+        )
+        for row in batch:
+            if len(deal_ids) >= max_deals:
+                break
+            did = str(row.get("id") or "").strip()
+            if did:
+                deal_ids.append(did)
+        if not next_after or not batch:
+            break
+        after = next_after
+
+    results: list[dict[str, Any]] = []
+    for did in deal_ids:
+        r = sync_deal_from_xero(settings, did, require_sync_flag=False)
+        results.append(
+            {
+                "deal_id": did,
+                "ok": r.ok,
+                "skipped": r.skipped,
+                "error": r.error,
+            }
+        )
+    return {"queued": len(deal_ids), "results": results}

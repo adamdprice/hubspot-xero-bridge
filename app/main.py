@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import html
 import json
+import logging
 import os
 import secrets
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
 
@@ -21,7 +24,11 @@ from app.deal_sync import deal_xero_search_property_names
 from app.hubspot_client import HubSpotClient
 from app.services.invoice_from_deal import create_xero_invoice_from_deal
 from app.services.manual_invoice import create_manual_draft_invoice
-from app.services.sync_deal_xero import process_deals_pending_xero_sync, sync_deal_from_xero
+from app.services.sync_deal_xero import (
+    process_deals_pending_xero_sync,
+    process_deals_with_xero_invoice_number_sync,
+    sync_deal_from_xero,
+)
 from app.xero_credentials import (
     effective_xero_refresh_token,
     effective_xero_tenant_id,
@@ -40,7 +47,65 @@ def _webhook_stdout_line(payload: dict[str, Any]) -> None:
     """Write one JSON line to stdout (Railway captures this; app loggers often omit INFO)."""
     print(json.dumps({"hubspot_webhook": True, **payload}, default=str), flush=True)
 
-app = FastAPI(title="HubSpot–Xero bridge", version="0.2.0")
+
+_log_app = logging.getLogger("hubspot_xero_bridge")
+
+
+async def _xero_invoice_number_sync_background_loop(interval_sec: int) -> None:
+    """Every interval_sec, sync deals that have Xero invoice number on the deal (HubSpot HAS_PROPERTY)."""
+    while True:
+        try:
+            settings = get_settings()
+            max_d = max(1, int(settings.hubspot_xero_invoice_number_sync_max_deals or 500))
+            out = await asyncio.to_thread(
+                process_deals_with_xero_invoice_number_sync,
+                settings,
+                max_deals=max_d,
+            )
+            ok_n = sum(1 for r in out.get("results") or [] if r.get("ok"))
+            _log_app.info(
+                "xero_invoice_number_sync_timer: queued=%s ok=%s",
+                out.get("queued"),
+                ok_n,
+            )
+            print(
+                json.dumps(
+                    {
+                        "xero_invoice_number_sync_timer": True,
+                        "queued": out.get("queued"),
+                        "ok_count": ok_n,
+                        "error": out.get("error"),
+                    },
+                    default=str,
+                ),
+                flush=True,
+            )
+        except Exception:
+            _log_app.exception("xero_invoice_number_sync_timer failed")
+        await asyncio.sleep(interval_sec)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task: Optional[asyncio.Task] = None
+    try:
+        s = get_settings()
+        interval = int(s.hubspot_xero_invoice_number_sync_interval_seconds or 0)
+    except Exception:
+        interval = 0
+    if interval > 0:
+        task = asyncio.create_task(_xero_invoice_number_sync_background_loop(interval))
+        _log_app.info("xero_invoice_number_sync_timer started (interval=%ss)", interval)
+    yield
+    if task:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
+app = FastAPI(title="HubSpot–Xero bridge", version="0.2.0", lifespan=lifespan)
 
 # Starlette inserts each add_middleware at index 0, so last-added is outermost on the request path.
 # ProxyHeaders first (outermost): trust X-Forwarded-Proto / Host so webhook signatures (v2/v3) match public URL.
@@ -104,6 +169,8 @@ def api_status():
             "xero_refresh_token_source": "none",
             "xero_token_sqlite_path": None,
             "xero_oauth_ready": False,
+            "xero_invoice_number_sync_interval_seconds": None,
+            "xero_invoice_number_sync_max_deals": None,
             "error": str(e),
         }
     return {
@@ -117,6 +184,8 @@ def api_status():
         "xero_token_sqlite_path": get_resolved_sqlite_path() if is_token_store_enabled() else None,
         "xero_oauth_ready": bool(s.xero_client_id.strip() and s.xero_client_secret.strip()),
         "oauth_start_path": "/auth/xero/start",
+        "xero_invoice_number_sync_interval_seconds": s.hubspot_xero_invoice_number_sync_interval_seconds,
+        "xero_invoice_number_sync_max_deals": s.hubspot_xero_invoice_number_sync_max_deals,
         "defaults": {
             "sales_account": s.xero_sales_account_code,
             "item_code": s.xero_item_code,
@@ -514,6 +583,20 @@ def post_cron_sync_xero(max_deals: int = Query(50, ge=1, le=100)):
         raise HTTPException(status_code=500, detail=str(e)) from e
 
     return process_deals_pending_xero_sync(settings, max_deals=max_deals)
+
+
+@app.post("/api/cron/sync-xero-by-invoice-number")
+def post_cron_sync_xero_by_invoice_number(max_deals: int = Query(500, ge=1, le=2000)):
+    """
+    Sync all deals where the Xero invoice number field is populated (same as the in-app timer).
+    Does not require xero_sync_trigger. Uses same auth as other cron routes when BRIDGE_AUTH_TOKEN is set.
+    """
+    try:
+        settings = get_settings()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+    return process_deals_with_xero_invoice_number_sync(settings, max_deals=max_deals)
 
 
 def _hubspot_webhook_deal_id(body: dict[str, Any]) -> Optional[str]:

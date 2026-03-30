@@ -304,6 +304,50 @@ class HubSpotClient:
         data = self._request("POST", "/crm/v3/objects/deals/search", json_body=body)
         return data.get("results") or []
 
+    def search_deals_has_property(
+        self,
+        property_name: str,
+        *,
+        extra_properties: Optional[list[str]] = None,
+        limit: int = 100,
+        after: Optional[str] = None,
+    ) -> tuple[list[dict], Optional[str]]:
+        """
+        Search deals where the property has a non-empty value (HubSpot HAS_PROPERTY operator).
+        Returns (results, next_page_after_cursor) for pagination.
+        """
+        pn = (property_name or "").strip()
+        if not pn:
+            return [], None
+        props = [
+            "dealname",
+            "amount",
+            "hs_object_id",
+        ]
+        if extra_properties:
+            props = list(dict.fromkeys(props + extra_properties))
+        body: dict[str, Any] = {
+            "filterGroups": [
+                {
+                    "filters": [
+                        {
+                            "propertyName": pn,
+                            "operator": "HAS_PROPERTY",
+                        }
+                    ]
+                }
+            ],
+            "properties": props,
+            "limit": min(max(limit, 1), 100),
+        }
+        if after:
+            body["after"] = after
+        data = self._request("POST", "/crm/v3/objects/deals/search", json_body=body)
+        results = data.get("results") or []
+        paging = data.get("paging") or {}
+        next_after = paging.get("next", {}).get("after")
+        return results, str(next_after) if next_after else None
+
     def get_deal_associated_company_ids(self, deal_id: str) -> list[str]:
         data = self._request(
             "GET",

@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     hubspot_deal_prop_last_xero_sync: str = "last_xero_sync"
     hubspot_deal_prop_xero_sync_last_error_date: str = "xero_sync_last_error_date"
 
+    # In-process timer: pull Xero status for deals with hubspot_deal_prop_xero_invoice_number set (HAS_PROPERTY).
+    # Set to 0 to disable the background loop (e.g. use Railway cron on /api/cron/sync-xero-by-invoice-number only).
+    # Use a single uvicorn worker if you enable this, or each worker would run its own loop.
+    hubspot_xero_invoice_number_sync_interval_seconds: int = 600
+    hubspot_xero_invoice_number_sync_max_deals: int = 500
+
     # OAuth app credentials (always required for Xero API after you connect)
     xero_client_id: str = ""
     xero_client_secret: str = ""
