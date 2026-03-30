@@ -12,14 +12,14 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from app.config import Settings
-
-
-def _clear_xero_sync_trigger_value(settings: Settings) -> str:
-    return (settings.hubspot_deal_xero_sync_trigger_clear_value or "").strip()
 from app.deal_sync import deal_xero_sync_read_property_names, patch_deal_xero
 from app.hubspot_client import HubSpotClient
 from app.xero_credentials import make_xero_client
 from app.xero_client import invoice_fields_for_hubspot
+
+
+def _clear_xero_sync_trigger_value(settings: Settings) -> str:
+    return (settings.hubspot_deal_xero_sync_trigger_clear_value or "").strip()
 
 
 def _utc_now_iso() -> str:

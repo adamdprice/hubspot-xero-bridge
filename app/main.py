@@ -538,6 +538,24 @@ def _hubspot_webhook_skip(body: dict[str, Any], settings: Settings) -> tuple[boo
     return False, ""
 
 
+def _hubspot_webhook_payload_confirms_sync_trigger(body: dict[str, Any], settings: Settings) -> bool:
+    """
+    True when the webhook proves the user set xero_sync_trigger to the sync value.
+    Used to skip require_sync_flag on GET — HubSpot often fires the webhook before the deal read shows the new value.
+    """
+    if _hubspot_subscription_type(body) != "deal.propertyChange":
+        return False
+    want_prop = (settings.hubspot_deal_prop_xero_sync_trigger or "").strip()
+    pn = (body.get("propertyName") or "").strip()
+    if not want_prop or not pn or pn != want_prop:
+        return False
+    pv = (body.get("propertyValue") or "").strip()
+    want_val = (settings.hubspot_deal_xero_sync_trigger_value or "").strip()
+    if not want_val:
+        return False
+    return pv.lower() == want_val.lower()
+
+
 def _process_hubspot_sync_deal_event(body: dict[str, Any], settings: Settings) -> dict[str, Any]:
     """Handle one webhook object (HubSpot sends a JSON array of events per POST)."""
     deal_id = _hubspot_webhook_deal_id(body)
@@ -549,7 +567,9 @@ def _process_hubspot_sync_deal_event(body: dict[str, Any], settings: Settings) -
         return {"deal_id": deal_id, "ok": True, "skipped": True, "reason": reason}
 
     is_hubspot_crm = bool(_hubspot_subscription_type(body))
-    require_flag = is_hubspot_crm
+    # CRM webhooks require a sync flag on GET unless this event itself proves Sync was set (avoids read-your-writes race).
+    payload_confirms_sync = _hubspot_webhook_payload_confirms_sync_trigger(body, settings)
+    require_flag = is_hubspot_crm and not payload_confirms_sync
 
     result = sync_deal_from_xero(settings, deal_id, require_sync_flag=require_flag)
     if result.skipped:
