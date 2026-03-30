@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import html
+import json
+import logging
 import os
 import secrets
 import time
@@ -31,6 +33,8 @@ from app.xero_token_store import get_resolved_sqlite_path, is_token_store_enable
 from app.xero_oauth import DEFAULT_SCOPES, build_authorize_url, exchange_authorization_code, fetch_connections
 
 load_dotenv()
+
+_log_webhook = logging.getLogger("hubspot.webhook")
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
@@ -560,11 +564,15 @@ def _process_hubspot_sync_deal_event(body: dict[str, Any], settings: Settings) -
     """Handle one webhook object (HubSpot sends a JSON array of events per POST)."""
     deal_id = _hubspot_webhook_deal_id(body)
     if not deal_id:
-        return {"ok": False, "error": "missing objectId, dealId, or deal_id"}
+        out: dict[str, Any] = {"ok": False, "error": "missing objectId, dealId, or deal_id"}
+        _log_webhook.info("sync-deal %s", json.dumps(out))
+        return out
 
     skip, reason = _hubspot_webhook_skip(body, settings)
     if skip:
-        return {"deal_id": deal_id, "ok": True, "skipped": True, "reason": reason}
+        out = {"deal_id": deal_id, "ok": True, "skipped": True, "reason": reason}
+        _log_webhook.info("sync-deal %s", json.dumps(out))
+        return out
 
     is_hubspot_crm = bool(_hubspot_subscription_type(body))
     # CRM webhooks require a sync flag on GET unless this event itself proves Sync was set (avoids read-your-writes race).
@@ -573,10 +581,13 @@ def _process_hubspot_sync_deal_event(body: dict[str, Any], settings: Settings) -
 
     result = sync_deal_from_xero(settings, deal_id, require_sync_flag=require_flag)
     if result.skipped:
-        return {"deal_id": deal_id, "ok": True, "skipped": True, "reason": "no_sync_pending_on_deal"}
-    if not result.ok:
-        return {"deal_id": deal_id, "ok": False, "error": result.error or "Sync failed"}
-    return {"deal_id": result.deal_id, "ok": True}
+        out = {"deal_id": deal_id, "ok": True, "skipped": True, "reason": "no_sync_pending_on_deal"}
+    elif not result.ok:
+        out = {"deal_id": deal_id, "ok": False, "error": result.error or "Sync failed"}
+    else:
+        out = {"deal_id": result.deal_id, "ok": True}
+    _log_webhook.info("sync-deal %s", json.dumps(out))
+    return out
 
 
 @app.post("/api/webhooks/hubspot/sync-deal")
@@ -599,11 +610,13 @@ async def post_webhook_sync_deal(request: Request):
 
     if isinstance(body, list):
         if not body:
+            _log_webhook.info("sync-deal %s", json.dumps({"ok": True, "skipped": True, "reason": "empty_batch"}))
             return {"ok": True, "skipped": True, "reason": "empty_batch"}
         results: list[dict[str, Any]] = []
         for item in body:
             if not isinstance(item, dict):
                 results.append({"ok": False, "error": "expected_object_in_batch"})
+                _log_webhook.info("sync-deal %s", json.dumps(results[-1]))
                 continue
             results.append(_process_hubspot_sync_deal_event(item, settings))
         any_err = any(not r.get("ok") for r in results)
