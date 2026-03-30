@@ -63,6 +63,12 @@ def _xero_invoice_number_is_ignored(inv_num_hs: str, settings: Settings) -> bool
     return low in _xero_invoice_number_ignore_tokens(settings)
 
 
+def hubspot_invoice_status_is_paid(props: dict[str, Any], settings: Settings) -> bool:
+    """True when the deal's xero_invoice_status matches Paid (same UI label we write from Xero)."""
+    raw = (props.get(settings.hubspot_deal_prop_xero_invoice_status) or "").strip()
+    return bool(raw) and raw.lower() == "paid"
+
+
 def _sync_requested(props: dict[str, Any], settings: Settings) -> bool:
     """True if the deal asks for a Xero pull (boolean, dropdown trigger, or known xero_invoice_id)."""
     sw = (settings.hubspot_deal_prop_sync_with_xero or "").strip()
@@ -103,6 +109,7 @@ def sync_deal_from_xero(
     deal_id: str,
     *,
     require_sync_flag: bool = True,
+    skip_if_hubspot_status_paid: bool = False,
 ) -> SyncDealXeroResult:
     hs = HubSpotClient(settings.hubspot_access_token)
     extra = deal_xero_sync_read_property_names(settings)
@@ -110,6 +117,9 @@ def sync_deal_from_xero(
     props = deal.get("properties") or {}
 
     if require_sync_flag and not _sync_requested(props, settings):
+        return SyncDealXeroResult(ok=True, deal_id=deal_id, skipped=True)
+
+    if skip_if_hubspot_status_paid and hubspot_invoice_status_is_paid(props, settings):
         return SyncDealXeroResult(ok=True, deal_id=deal_id, skipped=True)
 
     inv_id = (props.get(settings.hubspot_deal_prop_xero_invoice_id) or "").strip()
@@ -204,12 +214,30 @@ def process_deals_pending_xero_sync(settings: Settings, *, max_deals: int = 50) 
             if did:
                 seen[did] = row
     rows = list(seen.values())[:max_deals]
+    skip_paid = bool(settings.hubspot_xero_skip_sync_when_status_paid)
     results: list[dict[str, Any]] = []
     for row in rows:
         did = str(row.get("id") or "")
         if not did:
             continue
-        r = sync_deal_from_xero(settings, did, require_sync_flag=False)
+        props = row.get("properties") or {}
+        if skip_paid and hubspot_invoice_status_is_paid(props, settings):
+            results.append(
+                {
+                    "deal_id": did,
+                    "ok": True,
+                    "skipped": True,
+                    "reason": "hubspot_status_paid",
+                    "error": None,
+                }
+            )
+            continue
+        r = sync_deal_from_xero(
+            settings,
+            did,
+            require_sync_flag=False,
+            skip_if_hubspot_status_paid=skip_paid,
+        )
         results.append(
             {
                 "deal_id": did,
@@ -243,6 +271,7 @@ def process_deals_with_xero_invoice_number_sync(
     """
     Find deals with xero_invoice_number and/or xero_invoice_id set (HubSpot HAS_PROPERTY) and pull from Xero.
     Does not require xero_sync_trigger or sync_with_xero — for scheduled / cron sync.
+    When hubspot_xero_skip_sync_when_status_paid is true, deals whose xero_invoice_status is already Paid are omitted.
     """
     if settings.hubspot_xero_invoice_number_sync_disabled:
         return {
@@ -265,11 +294,16 @@ def process_deals_with_xero_invoice_number_sync(
     seen_ids: set[str] = set()
     deal_ids: list[str] = []
 
+    skip_paid = bool(settings.hubspot_xero_skip_sync_when_status_paid)
+
     def _append_row(row: dict[str, Any]) -> None:
         did = str(row.get("id") or "").strip()
         if not did or did in seen_ids:
             return
         if prop and _deal_row_skip_for_invoice_batch_sync(row, prop=prop, settings=settings):
+            return
+        props = row.get("properties") or {}
+        if skip_paid and hubspot_invoice_status_is_paid(props, settings):
             return
         seen_ids.add(did)
         deal_ids.append(did)
@@ -301,7 +335,12 @@ def process_deals_with_xero_invoice_number_sync(
 
     results: list[dict[str, Any]] = []
     for did in deal_ids:
-        r = sync_deal_from_xero(settings, did, require_sync_flag=False)
+        r = sync_deal_from_xero(
+            settings,
+            did,
+            require_sync_flag=False,
+            skip_if_hubspot_status_paid=skip_paid,
+        )
         results.append(
             {
                 "deal_id": did,

@@ -181,6 +181,7 @@ def api_status():
             "xero_invoice_number_sync_disabled": None,
             "xero_invoice_number_sync_ignore_values": None,
             "xero_api_min_interval_seconds": None,
+            "hubspot_xero_skip_sync_when_status_paid": None,
             "error": str(e),
         }
     return {
@@ -199,6 +200,7 @@ def api_status():
         "xero_invoice_number_sync_disabled": s.hubspot_xero_invoice_number_sync_disabled,
         "xero_invoice_number_sync_ignore_values": s.hubspot_xero_invoice_number_sync_ignore_values,
         "xero_api_min_interval_seconds": s.xero_api_min_interval_seconds,
+        "hubspot_xero_skip_sync_when_status_paid": s.hubspot_xero_skip_sync_when_status_paid,
         "defaults": {
             "sales_account": s.xero_sales_account_code,
             "item_code": s.xero_item_code,

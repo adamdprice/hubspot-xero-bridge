@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     hubspot_xero_invoice_number_sync_disabled: bool = False
     # Comma-separated values (case-insensitive exact match). Deals with this Xero invoice number are never synced from Xero.
     hubspot_xero_invoice_number_sync_ignore_values: str = "OLD"
+    # Batch/timer invoice sync: skip deals whose HubSpot xero_invoice_status is already Paid (fewer Xero API calls).
+    hubspot_xero_skip_sync_when_status_paid: bool = True
 
     # OAuth app credentials (always required for Xero API after you connect)
     xero_client_id: str = ""
