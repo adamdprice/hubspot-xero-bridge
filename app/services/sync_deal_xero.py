@@ -87,10 +87,10 @@ class SyncDealXeroResult:
 
 
 def _patch_sync_error(hs: HubSpotClient, settings: Settings, deal_id: str, message: str) -> None:
+    """Record error on the deal. Does not clear xero_sync_trigger so you can fix data and retry without re-selecting Sync."""
     patch: dict[str, Any] = {
         settings.hubspot_deal_prop_xero_last_error: message[:500],
         settings.hubspot_deal_prop_xero_sync_last_error_date: _utc_today(),
-        settings.hubspot_deal_prop_xero_sync_trigger: _clear_xero_sync_trigger_value(settings),
     }
     sw = (settings.hubspot_deal_prop_sync_with_xero or "").strip()
     if sw:
@@ -152,6 +152,7 @@ def sync_deal_from_xero(
         xid = str(inv.get("InvoiceID") or "").strip()
         xc = xero_invoice_contact_id(inv)
 
+        # last_xero_sync is only set here (successful pull). Errors use _patch_sync_error and do not update this field.
         patch_ok: dict[str, Any] = {
             settings.hubspot_deal_prop_xero_invoice_number: num,
             settings.hubspot_deal_prop_xero_invoice_status: status,
