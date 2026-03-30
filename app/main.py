@@ -101,7 +101,6 @@ def api_status():
         }
     return {
         "hubspot_configured": bool(s.hubspot_access_token.strip()),
-        "hubspot_deal_sync_enabled": s.hubspot_deal_sync_enabled,
         "xero_connected": bool(
             effective_xero_refresh_token(s).strip() and effective_xero_tenant_id(s).strip()
         ),
@@ -635,7 +634,6 @@ async def post_webhook_sync_deal(request: Request):
             "step": "received",
             "object_ids": received_ids,
             "subscription_types": _peek_subscription_types_from_body(body),
-            "hubspot_deal_sync_enabled": settings.hubspot_deal_sync_enabled,
         }
     )
 

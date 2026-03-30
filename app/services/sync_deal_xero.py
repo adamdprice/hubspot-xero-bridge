@@ -85,16 +85,6 @@ def sync_deal_from_xero(
     *,
     require_sync_flag: bool = True,
 ) -> SyncDealXeroResult:
-    if not settings.hubspot_deal_sync_enabled:
-        return SyncDealXeroResult(
-            ok=False,
-            deal_id=deal_id,
-            error=(
-                "HUBSPOT_DEAL_SYNC_ENABLED is false — in Railway Variables set it to true, or delete the variable "
-                "(default is true) so invoice fields can be written to the deal."
-            ),
-        )
-
     hs = HubSpotClient(settings.hubspot_access_token)
     extra = deal_xero_sync_read_property_names(settings)
     deal = hs.get_deal(deal_id, extra_properties=extra)

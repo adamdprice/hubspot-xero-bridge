@@ -76,16 +76,15 @@ def create_xero_invoice_from_deal(
             idempotent=True,
         )
 
-    if settings.hubspot_deal_sync_enabled:
-        sync_key = (props.get(settings.hubspot_deal_prop_xero_sync_key) or "").strip()
-        if not sync_key:
-            sync_key = str(uuid.uuid4())
-            patch_deal_xero(
-                hs,
-                settings,
-                deal_id,
-                {settings.hubspot_deal_prop_xero_sync_key: sync_key},
-            )
+    sync_key = (props.get(settings.hubspot_deal_prop_xero_sync_key) or "").strip()
+    if not sync_key:
+        sync_key = str(uuid.uuid4())
+        patch_deal_xero(
+            hs,
+            settings,
+            deal_id,
+            {settings.hubspot_deal_prop_xero_sync_key: sync_key},
+        )
 
     try:
         xero = make_xero_client(settings)

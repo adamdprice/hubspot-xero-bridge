@@ -1,7 +1,7 @@
 import logging
 from typing import Any
 
-from pydantic import AliasChoices, Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _log = logging.getLogger(__name__)
@@ -14,9 +14,6 @@ class Settings(BaseSettings):
     hubspot_access_token: str = ""
     # Private/public app "Client secret" (Auth tab) — NOT the access token; validates X-HubSpot-Signature on webhooks.
     hubspot_client_secret: str = ""
-
-    # Set false until you create the custom deal properties in HubSpot (see .env.example)
-    hubspot_deal_sync_enabled: bool = True
 
     hubspot_deal_prop_xero_contact_id: str = "xero_contact_id"
     hubspot_deal_prop_xero_invoice_id: str = "xero_invoice_id"
@@ -60,21 +57,6 @@ class Settings(BaseSettings):
     xero_item_code: str = "Day Rate (VAT)"
     # Tax type for VAT on sales — org-specific. UK standard rate sales often OUTPUT2; verify in Xero Settings → Tax rates
     xero_line_tax_type: str = "OUTPUT2"
-
-    @field_validator("hubspot_deal_sync_enabled", mode="before")
-    @classmethod
-    def _parse_hubspot_deal_sync_enabled(cls, v: Any) -> bool:
-        if v is None or v == "":
-            return True
-        if isinstance(v, bool):
-            return v
-        if isinstance(v, str):
-            s = v.strip().lower()
-            if s in ("0", "false", "no", "off"):
-                return False
-            if s in ("1", "true", "yes", "on"):
-                return True
-        return bool(v)
 
     @model_validator(mode="after")
     def _warn_if_webhook_secret_looks_like_access_token(self):

@@ -141,7 +141,7 @@ def main() -> int:
         print(f"FAIL {name}: {r.status_code} {r.text}", file=sys.stderr)
         return 1
 
-    print("\nDone. Set HUBSPOT_DEAL_SYNC_ENABLED=true in .env and restart the bridge.")
+    print("\nDone. Restart the bridge after properties are created.")
     return 0
 
 
