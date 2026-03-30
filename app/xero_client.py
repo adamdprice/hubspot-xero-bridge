@@ -13,6 +13,17 @@ import httpx
 _log = logging.getLogger(__name__)
 
 
+def _retry_wait_seconds(response: httpx.Response, attempt_index: int) -> float:
+    """Honor Retry-After when present; else exponential backoff (capped)."""
+    ra = response.headers.get("Retry-After")
+    if ra:
+        try:
+            return min(120.0, float(ra))
+        except ValueError:
+            pass
+    return min(60.0, 1.0 * (2**attempt_index))
+
+
 def _parse_money(val: Any) -> float:
     try:
         if val is None or val == "":
@@ -130,16 +141,54 @@ class XeroClient:
             "Content-Type": "application/json",
         }
 
+    def _request(
+        self,
+        method: str,
+        url: str,
+        *,
+        params: Optional[dict[str, Any]] = None,
+        json: Optional[Any] = None,
+        timeout: float = 30.0,
+        max_attempts: int = 6,
+    ) -> httpx.Response:
+        """
+        Xero throttles aggressively (429 Too Many Requests). Retry with backoff and Retry-After.
+        """
+        last: Optional[httpx.Response] = None
+        for attempt in range(max_attempts):
+            with httpx.Client(timeout=timeout) as client:
+                r = client.request(
+                    method,
+                    url,
+                    params=params,
+                    json=json,
+                    headers=self._headers(),
+                )
+            last = r
+            if r.status_code in (429, 503) and attempt < max_attempts - 1:
+                wait = _retry_wait_seconds(r, attempt)
+                _log.warning(
+                    "Xero rate limit / unavailable (%s); waiting %.1fs before retry %s/%s",
+                    r.status_code,
+                    wait,
+                    attempt + 2,
+                    max_attempts,
+                )
+                time.sleep(wait)
+                continue
+            return r
+        assert last is not None
+        return last
+
     def find_contact_by_email(self, email: str) -> Optional[str]:
         email_norm = email.strip().lower()
-        with httpx.Client(timeout=30.0) as client:
-            r = client.get(
-                f"{self.API_BASE}/Contacts",
-                params={"where": f'EmailAddress=="{email_norm}"'},
-                headers=self._headers(),
-            )
-            r.raise_for_status()
-            data = r.json()
+        r = self._request(
+            "GET",
+            f"{self.API_BASE}/Contacts",
+            params={"where": f'EmailAddress=="{email_norm}"'},
+        )
+        r.raise_for_status()
+        data = r.json()
         contacts = data.get("Contacts") or []
         if not contacts:
             return None
@@ -151,14 +200,13 @@ class XeroClient:
         if not term:
             return []
         try:
-            with httpx.Client(timeout=30.0) as client:
-                r = client.get(
-                    f"{self.API_BASE}/Contacts",
-                    params={"searchTerm": term, "page": page},
-                    headers=self._headers(),
-                )
-                r.raise_for_status()
-                data = r.json()
+            r = self._request(
+                "GET",
+                f"{self.API_BASE}/Contacts",
+                params={"searchTerm": term, "page": page},
+            )
+            r.raise_for_status()
+            data = r.json()
         except httpx.HTTPStatusError as e:
             snippet = (e.response.text or "")[:1200].strip()
             raise RuntimeError(
@@ -171,15 +219,11 @@ class XeroClient:
         return data.get("Contacts") or []
 
     def get_contact_by_id(self, contact_id: str) -> Optional[dict[str, Any]]:
-        with httpx.Client(timeout=30.0) as client:
-            r = client.get(
-                f"{self.API_BASE}/Contacts/{contact_id}",
-                headers=self._headers(),
-            )
-            if r.status_code == 404:
-                return None
-            r.raise_for_status()
-            data = r.json()
+        r = self._request("GET", f"{self.API_BASE}/Contacts/{contact_id}")
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        data = r.json()
         contacts = data.get("Contacts") or []
         return contacts[0] if contacts else None
 
@@ -199,14 +243,9 @@ class XeroClient:
         }
         if phone:
             payload["Contacts"][0]["Phones"] = [{"PhoneType": "DEFAULT", "PhoneNumber": phone}]
-        with httpx.Client(timeout=30.0) as client:
-            r = client.post(
-                f"{self.API_BASE}/Contacts",
-                json=payload,
-                headers=self._headers(),
-            )
-            r.raise_for_status()
-            data = r.json()
+        r = self._request("POST", f"{self.API_BASE}/Contacts", json=payload)
+        r.raise_for_status()
+        data = r.json()
         contacts = data.get("Contacts") or []
         if not contacts:
             raise RuntimeError("Xero create contact returned no Contacts")
@@ -231,14 +270,9 @@ class XeroClient:
             payload["Contacts"][0]["EmailAddress"] = email.strip().lower()
         if phone:
             payload["Contacts"][0]["Phones"] = [{"PhoneType": "DEFAULT", "PhoneNumber": phone}]
-        with httpx.Client(timeout=30.0) as client:
-            r = client.post(
-                f"{self.API_BASE}/Contacts",
-                json=payload,
-                headers=self._headers(),
-            )
-            r.raise_for_status()
-            data = r.json()
+        r = self._request("POST", f"{self.API_BASE}/Contacts", json=payload)
+        r.raise_for_status()
+        data = r.json()
         contacts = data.get("Contacts") or []
         if not contacts:
             raise RuntimeError("Xero create contact returned no Contacts")
@@ -267,27 +301,23 @@ class XeroClient:
             inv["Date"] = date_str
         if due_date_str:
             inv["DueDate"] = due_date_str
-        with httpx.Client(timeout=60.0) as client:
-            r = client.post(
-                f"{self.API_BASE}/Invoices",
-                json={"Invoices": [inv]},
-                headers=self._headers(),
-            )
-            r.raise_for_status()
-            data = r.json()
+        r = self._request(
+            "POST",
+            f"{self.API_BASE}/Invoices",
+            json={"Invoices": [inv]},
+            timeout=60.0,
+        )
+        r.raise_for_status()
+        data = r.json()
         invoices = data.get("Invoices") or []
         if not invoices:
             raise RuntimeError("Xero create invoice returned no Invoices")
         return invoices[0]
 
     def get_invoice(self, invoice_id: str) -> dict[str, Any]:
-        with httpx.Client(timeout=30.0) as client:
-            r = client.get(
-                f"{self.API_BASE}/Invoices/{invoice_id}",
-                headers=self._headers(),
-            )
-            r.raise_for_status()
-            data = r.json()
+        r = self._request("GET", f"{self.API_BASE}/Invoices/{invoice_id}")
+        r.raise_for_status()
+        data = r.json()
         invoices = data.get("Invoices") or []
         return invoices[0] if invoices else {}
 
@@ -299,14 +329,13 @@ class XeroClient:
         # Escape double quotes in number for where clause
         safe = n.replace("\\", "\\\\").replace('"', '\\"')
         where = f'InvoiceNumber=="{safe}"'
-        with httpx.Client(timeout=30.0) as client:
-            r = client.get(
-                f"{self.API_BASE}/Invoices",
-                params={"where": where},
-                headers=self._headers(),
-            )
-            r.raise_for_status()
-            data = r.json()
+        r = self._request(
+            "GET",
+            f"{self.API_BASE}/Invoices",
+            params={"where": where},
+        )
+        r.raise_for_status()
+        data = r.json()
         invoices = data.get("Invoices") or []
         if not invoices:
             return None
