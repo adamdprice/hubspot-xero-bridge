@@ -3,7 +3,7 @@ Pull invoice status (and number / Xero ID) from Xero into HubSpot when sync is r
 
 Request sync via optional sync_with_xero (boolean) and/or xero_sync_trigger dropdown (default option value "Sync").
 
-Uses invoice_number and/or xero_invoice_id to find the invoice in Xero (number is tried first when set).
+Uses the deal's Xero invoice number field and/or xero_invoice_id to find the invoice in Xero (number is tried first when set).
 """
 from __future__ import annotations
 
@@ -119,7 +119,7 @@ def sync_deal_from_xero(
                 inv = None
         if not inv:
             msg = (
-                "No Xero invoice found. Set invoice_number and/or xero_invoice_id on the deal "
+                "No Xero invoice found. Set the Xero invoice number property and/or xero_invoice_id on the deal "
                 "(number is looked up first when both are set)."
             )
             _patch_sync_error(hs, settings, deal_id, msg)
