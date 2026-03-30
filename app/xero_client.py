@@ -1,6 +1,11 @@
 """
 Xero Accounting API: OAuth2 refresh + Contacts + Invoices.
 https://developer.xero.com/documentation/api/accounting/overview
+
+Org-level limits (see Xero Developer — rate limits / API efficiencies): typically **~60 calls per minute**,
+**up to 5 concurrent** requests in flight, and a **daily** cap (often ~5,000 calls/day per org, tier-dependent).
+Exceeding limits returns **429**; wait for Retry-After / bucket reset. This client serializes Accounting calls
+(one in flight per process) and spaces requests to stay under per-minute pressure.
 """
 from __future__ import annotations
 
@@ -106,8 +111,8 @@ def xero_invoice_contact_id(inv: dict[str, Any]) -> str:
 class XeroClient:
     TOKEN_URL = "https://identity.xero.com/connect/token"
     API_BASE = "https://api.xero.com/api.xro/2.0"
-    # Per-process: serialize Accounting API calls and space by min_interval from end of previous response.
-    # Must use the class attribute for last-at (never assign self._accounting_api_last_at — that shadows per instance).
+    # Per-process: one Accounting request at a time (Xero allows up to 5 concurrent; we use 1 to avoid bursts).
+    # Space by min_interval from end of previous response. Use class _accounting_api_last_at only (no self shadowing).
     _accounting_api_gate: threading.Lock = threading.Lock()
     _accounting_api_last_at: float = 0.0
     # After 429/503, block all Accounting calls until this time (epoch seconds).

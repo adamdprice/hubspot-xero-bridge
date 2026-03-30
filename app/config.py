@@ -81,7 +81,7 @@ class Settings(BaseSettings):
     xero_item_code: str = "Day Rate (VAT)"
     # Tax type for VAT on sales — org-specific. UK standard rate sales often OUTPUT2; verify in Xero Settings → Tax rates
     xero_line_tax_type: str = "OUTPUT2"
-    # Minimum delay after each Accounting API response before the next call (process-wide). Xero allows ~60/min per org.
+    # Minimum delay after each Accounting API response (process-wide). Xero: ~60/min and ~5k/day per org (typical); stay under with spacing + smaller batches.
     xero_api_min_interval_seconds: float = 3.0
 
     @model_validator(mode="after")
