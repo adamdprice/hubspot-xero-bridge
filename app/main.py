@@ -82,7 +82,14 @@ class ManualInvoiceBody(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    """Railway healthcheck; includes whether legacy sync_with_xero property is configured (must be false if you deleted that HubSpot field)."""
+    out: dict[str, Any] = {"status": "ok"}
+    try:
+        s = get_settings()
+        out["legacy_sync_property_configured"] = bool((s.hubspot_deal_prop_sync_with_xero or "").strip())
+    except Exception:
+        out["legacy_sync_property_configured"] = bool((os.getenv("HUBSPOT_DEAL_PROP_SYNC_WITH_XERO") or "").strip())
+    return out
 
 
 @app.get("/api/status")
@@ -101,6 +108,7 @@ def api_status():
         }
     return {
         "hubspot_configured": bool(s.hubspot_access_token.strip()),
+        "legacy_sync_property_configured": bool((s.hubspot_deal_prop_sync_with_xero or "").strip()),
         "xero_connected": bool(
             effective_xero_refresh_token(s).strip() and effective_xero_tenant_id(s).strip()
         ),
@@ -477,7 +485,7 @@ def post_sync_deal_from_xero(
     deal_id: str,
     force: bool = Query(False, description="If true, sync even when no sync flag/trigger is set."),
 ):
-    """Pull invoice status from Xero into the deal; clears sync_with_xero and xero_sync_trigger when done."""
+    """Pull invoice status from Xero into the deal; clears xero_sync_trigger (and optional sync_with_xero) when done."""
     try:
         settings = get_settings()
     except Exception as e:
@@ -488,7 +496,7 @@ def post_sync_deal_from_xero(
         raise HTTPException(
             status_code=400,
             detail=(
-                "Set sync_with_xero or xero_sync_trigger (e.g. Sync) on this deal first, "
+                "Set xero_sync_trigger (e.g. Sync), or optional sync_with_xero if configured, on this deal first, "
                 "or call with ?force=true."
             ),
         )
@@ -499,7 +507,7 @@ def post_sync_deal_from_xero(
 
 @app.post("/api/cron/sync-xero")
 def post_cron_sync_xero(max_deals: int = Query(50, ge=1, le=100)):
-    """Process deals pending sync (sync_with_xero or xero_sync_trigger). Uses same auth as the bridge."""
+    """Process deals pending sync (xero_sync_trigger and/or optional sync_with_xero). Uses same auth as the bridge."""
     try:
         settings = get_settings()
     except Exception as e:

@@ -22,6 +22,14 @@ def invoice_fields_for_hubspot(inv: dict[str, Any]) -> tuple[str, str]:
     return num, st
 
 
+def xero_invoice_contact_id(inv: dict[str, Any]) -> str:
+    """ContactID from the invoice's Contact block, for syncing to HubSpot xero_contact_id."""
+    c = inv.get("Contact") or {}
+    if isinstance(c, dict):
+        return str(c.get("ContactID") or "").strip()
+    return ""
+
+
 class XeroClient:
     TOKEN_URL = "https://identity.xero.com/connect/token"
     API_BASE = "https://api.xero.com/api.xro/2.0"

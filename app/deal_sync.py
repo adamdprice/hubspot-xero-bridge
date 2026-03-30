@@ -12,18 +12,25 @@ from app.hubspot_client import HubSpotClient
 
 def deal_xero_extra_property_names(settings: Settings) -> list[str]:
     """Property internal names to request on deal reads."""
-    return [
+    out = [
         settings.hubspot_deal_prop_xero_contact_id,
         settings.hubspot_deal_prop_xero_invoice_id,
         settings.hubspot_deal_prop_xero_invoice_number,
         settings.hubspot_deal_prop_xero_invoice_status,
         settings.hubspot_deal_prop_xero_sync_key,
         settings.hubspot_deal_prop_xero_last_error,
-        settings.hubspot_deal_prop_sync_with_xero,
-        settings.hubspot_deal_prop_xero_sync_trigger,
-        settings.hubspot_deal_prop_last_xero_sync,
-        settings.hubspot_deal_prop_xero_sync_last_error_date,
     ]
+    sw = (settings.hubspot_deal_prop_sync_with_xero or "").strip()
+    if sw:
+        out.append(sw)
+    out.extend(
+        [
+            settings.hubspot_deal_prop_xero_sync_trigger,
+            settings.hubspot_deal_prop_last_xero_sync,
+            settings.hubspot_deal_prop_xero_sync_last_error_date,
+        ]
+    )
+    return out
 
 
 def deal_xero_search_property_names(settings: Settings) -> list[str]:
@@ -49,16 +56,24 @@ def deal_xero_manual_read_names(settings: Settings) -> list[str]:
 
 def deal_xero_sync_read_property_names(settings: Settings) -> list[str]:
     """Properties needed to run Xero status sync (cron / sync-from-xero)."""
-    return [
+    out = [
+        settings.hubspot_deal_prop_xero_contact_id,
         settings.hubspot_deal_prop_xero_invoice_id,
         settings.hubspot_deal_prop_xero_invoice_number,
         settings.hubspot_deal_prop_xero_invoice_status,
-        settings.hubspot_deal_prop_sync_with_xero,
-        settings.hubspot_deal_prop_xero_sync_trigger,
-        settings.hubspot_deal_prop_last_xero_sync,
-        settings.hubspot_deal_prop_xero_last_error,
-        settings.hubspot_deal_prop_xero_sync_last_error_date,
     ]
+    sw = (settings.hubspot_deal_prop_sync_with_xero or "").strip()
+    if sw:
+        out.append(sw)
+    out.extend(
+        [
+            settings.hubspot_deal_prop_xero_sync_trigger,
+            settings.hubspot_deal_prop_last_xero_sync,
+            settings.hubspot_deal_prop_xero_last_error,
+            settings.hubspot_deal_prop_xero_sync_last_error_date,
+        ]
+    )
+    return out
 
 
 def patch_deal_xero(

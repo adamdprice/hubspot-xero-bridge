@@ -1,7 +1,7 @@
 """
 Pull invoice status (and number / Xero ID) from Xero into HubSpot when sync is requested.
 
-Request sync via sync_with_xero=true and/or xero_sync_trigger dropdown (default option value "Sync").
+Request sync via optional sync_with_xero (boolean) and/or xero_sync_trigger dropdown (default option value "Sync").
 
 Uses invoice_number and/or xero_invoice_id to find the invoice in Xero (number is tried first when set).
 """
@@ -17,7 +17,7 @@ from app.config import Settings
 from app.deal_sync import deal_xero_sync_read_property_names, patch_deal_xero
 from app.hubspot_client import HubSpotClient
 from app.xero_credentials import make_xero_client
-from app.xero_client import invoice_fields_for_hubspot
+from app.xero_client import invoice_fields_for_hubspot, xero_invoice_contact_id
 
 
 def _clear_xero_sync_trigger_value(settings: Settings) -> Optional[str]:
@@ -48,7 +48,8 @@ def _hs_bool_true(val: Any) -> bool:
 
 def _sync_requested(props: dict[str, Any], settings: Settings) -> bool:
     """True if the deal asks for a Xero pull (boolean and/or dropdown trigger)."""
-    if _hs_bool_true(props.get(settings.hubspot_deal_prop_sync_with_xero)):
+    sw = (settings.hubspot_deal_prop_sync_with_xero or "").strip()
+    if sw and _hs_bool_true(props.get(sw)):
         return True
     raw = (props.get(settings.hubspot_deal_prop_xero_sync_trigger) or "").strip()
     want = (settings.hubspot_deal_xero_sync_trigger_value or "").strip()
@@ -66,17 +67,15 @@ class SyncDealXeroResult:
 
 
 def _patch_sync_error(hs: HubSpotClient, settings: Settings, deal_id: str, message: str) -> None:
-    patch_deal_xero(
-        hs,
-        settings,
-        deal_id,
-        {
-            settings.hubspot_deal_prop_xero_last_error: message[:500],
-            settings.hubspot_deal_prop_xero_sync_last_error_date: _utc_today(),
-            settings.hubspot_deal_prop_sync_with_xero: False,
-            settings.hubspot_deal_prop_xero_sync_trigger: _clear_xero_sync_trigger_value(settings),
-        },
-    )
+    patch: dict[str, Any] = {
+        settings.hubspot_deal_prop_xero_last_error: message[:500],
+        settings.hubspot_deal_prop_xero_sync_last_error_date: _utc_today(),
+        settings.hubspot_deal_prop_xero_sync_trigger: _clear_xero_sync_trigger_value(settings),
+    }
+    sw = (settings.hubspot_deal_prop_sync_with_xero or "").strip()
+    if sw:
+        patch[sw] = False
+    patch_deal_xero(hs, settings, deal_id, patch)
 
 
 def sync_deal_from_xero(
@@ -128,22 +127,24 @@ def sync_deal_from_xero(
 
         num, status = invoice_fields_for_hubspot(inv)
         xid = str(inv.get("InvoiceID") or "").strip()
+        xc = xero_invoice_contact_id(inv)
 
-        patch_deal_xero(
-            hs,
-            settings,
-            deal_id,
-            {
-                settings.hubspot_deal_prop_xero_invoice_number: num,
-                settings.hubspot_deal_prop_xero_invoice_status: status,
-                settings.hubspot_deal_prop_xero_invoice_id: xid,
-                settings.hubspot_deal_prop_last_xero_sync: _utc_now_iso(),
-                settings.hubspot_deal_prop_sync_with_xero: False,
-                settings.hubspot_deal_prop_xero_sync_trigger: _clear_xero_sync_trigger_value(settings),
-                settings.hubspot_deal_prop_xero_last_error: "",
-                settings.hubspot_deal_prop_xero_sync_last_error_date: "",
-            },
-        )
+        patch_ok: dict[str, Any] = {
+            settings.hubspot_deal_prop_xero_invoice_number: num,
+            settings.hubspot_deal_prop_xero_invoice_status: status,
+            settings.hubspot_deal_prop_xero_invoice_id: xid,
+            settings.hubspot_deal_prop_last_xero_sync: _utc_now_iso(),
+            settings.hubspot_deal_prop_xero_sync_trigger: _clear_xero_sync_trigger_value(settings),
+            settings.hubspot_deal_prop_xero_last_error: "",
+            settings.hubspot_deal_prop_xero_sync_last_error_date: "",
+        }
+        if xc:
+            patch_ok[settings.hubspot_deal_prop_xero_contact_id] = xc
+        sw = (settings.hubspot_deal_prop_sync_with_xero or "").strip()
+        if sw:
+            patch_ok[sw] = False
+
+        patch_deal_xero(hs, settings, deal_id, patch_ok)
         return SyncDealXeroResult(ok=True, deal_id=deal_id)
     except Exception as e:
         err = str(e)
@@ -152,19 +153,21 @@ def sync_deal_from_xero(
 
 
 def process_deals_pending_xero_sync(settings: Settings, *, max_deals: int = 50) -> dict[str, Any]:
-    """Find deals with sync_with_xero=true and/or xero_sync_trigger=Sync; run sync for each (cron)."""
+    """Find deals with sync_with_xero=true (if that property exists) and/or xero_sync_trigger=Sync; run each (cron)."""
     hs = HubSpotClient(settings.hubspot_access_token)
     extra = deal_xero_sync_read_property_names(settings)
     seen: dict[str, dict[str, Any]] = {}
-    for row in hs.search_deals_property_eq(
-        settings.hubspot_deal_prop_sync_with_xero,
-        "true",
-        extra_properties=extra,
-        limit=max_deals,
-    ):
-        did = str(row.get("id") or "")
-        if did:
-            seen[did] = row
+    sw = (settings.hubspot_deal_prop_sync_with_xero or "").strip()
+    if sw:
+        for row in hs.search_deals_property_eq(
+            sw,
+            "true",
+            extra_properties=extra,
+            limit=max_deals,
+        ):
+            did = str(row.get("id") or "")
+            if did:
+                seen[did] = row
     trig_val = (settings.hubspot_deal_xero_sync_trigger_value or "").strip()
     if trig_val:
         for row in hs.search_deals_property_eq(

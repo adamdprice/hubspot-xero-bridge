@@ -15,14 +15,18 @@ class Settings(BaseSettings):
     # Private/public app "Client secret" (Auth tab) — NOT the access token; validates X-HubSpot-Signature on webhooks.
     hubspot_client_secret: str = ""
 
+    # HubSpot deal property internal names (defaults match this portal; override via HUBSPOT_DEAL_PROP_* env if needed).
+    # xero_contact_id, xero_invoice_id, xero_sync_trigger, last_xero_sync, xero_sync_last_error,
+    # xero_sync_idempotency_key, xero_sync_last_error_date, invoice_number, invoice_status
     hubspot_deal_prop_xero_contact_id: str = "xero_contact_id"
     hubspot_deal_prop_xero_invoice_id: str = "xero_invoice_id"
     hubspot_deal_prop_xero_invoice_number: str = "invoice_number"
     hubspot_deal_prop_xero_invoice_status: str = "invoice_status"
     hubspot_deal_prop_xero_sync_key: str = "xero_sync_idempotency_key"
     hubspot_deal_prop_xero_last_error: str = "xero_sync_last_error"
-    # Optional: set sync_with_xero=true on a deal to pull status from Xero (cron or POST /api/deals/{id}/sync-from-xero)
-    hubspot_deal_prop_sync_with_xero: str = "sync_with_xero"
+    # Optional boolean property; leave empty if you removed it and only use xero_sync_trigger (dropdown).
+    # Legacy: set to sync_with_xero if you still have that checkbox.
+    hubspot_deal_prop_sync_with_xero: str = ""
     # Dropdown alternative (e.g. single option "Sync") for workflow triggers that cannot use booleans
     hubspot_deal_prop_xero_sync_trigger: str = "xero_sync_trigger"
     hubspot_deal_xero_sync_trigger_value: str = "Sync"
