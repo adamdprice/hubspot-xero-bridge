@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # Dropdown alternative (e.g. single option "Sync") for workflow triggers that cannot use booleans
     hubspot_deal_prop_xero_sync_trigger: str = "xero_sync_trigger"
     hubspot_deal_xero_sync_trigger_value: str = "Sync"
+    # Value written after a sync completes or errors (clears the trigger). Default ""; set if your HubSpot dropdown
+    # rejects empty and you add a second option (e.g. "—" or "None").
+    hubspot_deal_xero_sync_trigger_clear_value: str = ""
     hubspot_deal_prop_last_xero_sync: str = "last_xero_sync"
     hubspot_deal_prop_xero_sync_last_error_date: str = "xero_sync_last_error_date"
 

@@ -12,6 +12,10 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from app.config import Settings
+
+
+def _clear_xero_sync_trigger_value(settings: Settings) -> str:
+    return (settings.hubspot_deal_xero_sync_trigger_clear_value or "").strip()
 from app.deal_sync import deal_xero_sync_read_property_names, patch_deal_xero
 from app.hubspot_client import HubSpotClient
 from app.xero_credentials import make_xero_client
@@ -61,7 +65,7 @@ def _patch_sync_error(hs: HubSpotClient, settings: Settings, deal_id: str, messa
             settings.hubspot_deal_prop_xero_last_error: message[:500],
             settings.hubspot_deal_prop_xero_sync_last_error_date: _utc_today(),
             settings.hubspot_deal_prop_sync_with_xero: False,
-            settings.hubspot_deal_prop_xero_sync_trigger: "",
+            settings.hubspot_deal_prop_xero_sync_trigger: _clear_xero_sync_trigger_value(settings),
         },
     )
 
@@ -117,7 +121,7 @@ def sync_deal_from_xero(
                 settings.hubspot_deal_prop_xero_invoice_id: xid,
                 settings.hubspot_deal_prop_last_xero_sync: _utc_now_iso(),
                 settings.hubspot_deal_prop_sync_with_xero: False,
-                settings.hubspot_deal_prop_xero_sync_trigger: "",
+                settings.hubspot_deal_prop_xero_sync_trigger: _clear_xero_sync_trigger_value(settings),
                 settings.hubspot_deal_prop_xero_last_error: "",
                 settings.hubspot_deal_prop_xero_sync_last_error_date: "",
             },
