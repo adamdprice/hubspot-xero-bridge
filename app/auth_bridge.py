@@ -87,15 +87,24 @@ class BridgeAuthMiddleware(BaseHTTPMiddleware):
             if hs_ok or bearer_ok:
                 return await call_next(Request(request.scope, _replay_receive(body)))
 
-            return JSONResponse(
-                {
-                    "detail": (
-                        "Unauthorized. For HubSpot webhooks set HUBSPOT_CLIENT_SECRET to your app client secret "
-                        "(validates X-HubSpot-Signature). Or send Authorization: Bearer with BRIDGE_AUTH_TOKEN."
-                    )
-                },
-                status_code=401,
-            )
+            if token and not hubspot_secret:
+                detail = (
+                    "BRIDGE_AUTH_TOKEN is set but HUBSPOT_CLIENT_SECRET is missing. HubSpot webhooks cannot send "
+                    "Bearer tokens. In Railway: add HUBSPOT_CLIENT_SECRET = Client secret from HubSpot "
+                    "(Settings → Integrations → Private apps → your app → Auth), then redeploy."
+                )
+            elif hubspot_secret and not hs_ok:
+                detail = (
+                    "HubSpot webhook signature did not match HUBSPOT_CLIENT_SECRET. Use the Client secret from the "
+                    "same private app that owns this webhook subscription."
+                )
+            else:
+                detail = (
+                    "Unauthorized. Use HUBSPOT_CLIENT_SECRET for webhook signature verification, or "
+                    "Authorization: Bearer with BRIDGE_AUTH_TOKEN."
+                )
+
+            return JSONResponse({"detail": detail}, status_code=401)
 
         if not token:
             return await call_next(request)

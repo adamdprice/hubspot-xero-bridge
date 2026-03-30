@@ -37,6 +37,23 @@ def _decode_uri_for_hubspot_v3(uri: str) -> str:
     return uri
 
 
+def _verify_v2(request: Request, body: bytes, client_secret: str, received: str) -> bool:
+    """v2: SHA-256 hex of client_secret + method + full request URI + body (e.g. workflow webhooks)."""
+    if not received:
+        return False
+    try:
+        body_str = body.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    uri = str(request.url)
+    method = request.method.upper()
+    source = client_secret + method + uri + body_str
+    expected = hashlib.sha256(source.encode("utf-8")).hexdigest()
+    rx = received.strip().lower()
+    ex = expected.lower()
+    return len(rx) == len(ex) and secrets.compare_digest(ex, rx)
+
+
 def _verify_v1(body: bytes, client_secret: str, received: str) -> bool:
     if not received:
         return False
@@ -75,16 +92,21 @@ def _verify_v3(request: Request, body: bytes, client_secret: str, received: str)
 def verify_hubspot_webhook_signature(request: Request, body: bytes, client_secret: str) -> bool:
     """
     Return True if the request matches HubSpot's signature using the app's client secret.
-    Prefer v3 when X-HubSpot-Signature-v3 is present; otherwise v1 (X-HubSpot-Signature).
+    v3: X-HubSpot-Signature-v3 (HMAC). v2/v1: X-HubSpot-Signature (SHA-256 hex); use
+    X-HubSpot-Signature-Version to pick v2 vs v1.
     """
     secret = (client_secret or "").strip()
     if not secret:
         return False
     h = request.headers
     sig_v3 = (h.get("x-hubspot-signature-v3") or "").strip()
-    sig_v1 = (h.get("x-hubspot-signature") or "").strip()
+    sig_main = (h.get("x-hubspot-signature") or "").strip()
+    ver = (h.get("x-hubspot-signature-version") or "").strip().lower()
+
     if sig_v3:
         return _verify_v3(request, body, secret, sig_v3)
-    if sig_v1:
-        return _verify_v1(body, secret, sig_v1)
+    if sig_main:
+        if ver == "v2":
+            return _verify_v2(request, body, secret, sig_main)
+        return _verify_v1(body, secret, sig_main)
     return False
