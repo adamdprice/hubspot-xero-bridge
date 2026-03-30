@@ -9,7 +9,8 @@ from typing import Any, Optional
 from app.config import Settings
 from app.deal_sync import deal_xero_manual_read_names, patch_deal_xero
 from app.hubspot_client import HubSpotClient
-from app.xero_client import XeroClient
+from app.xero_credentials import make_xero_client
+from app.xero_client import XeroClient, invoice_fields_for_hubspot
 
 
 def _contact_person_name(props: dict[str, Any]) -> tuple[str, str]:
@@ -26,6 +27,8 @@ class ManualInvoiceResult:
     deal_id: str
     xero_invoice_id: Optional[str] = None
     xero_contact_id: Optional[str] = None
+    xero_invoice_number: Optional[str] = None
+    xero_invoice_status: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -93,12 +96,7 @@ def create_manual_draft_invoice(
     deal_name = (props.get("dealname") or f"Deal {deal_id}").strip()
 
     try:
-        xero = XeroClient(
-            settings.xero_client_id,
-            settings.xero_client_secret,
-            settings.xero_refresh_token,
-            settings.xero_tenant_id,
-        )
+        xero = make_xero_client(settings)
         xc_id = resolve_or_create_xero_contact(
             settings,
             hs,
@@ -132,6 +130,7 @@ def create_manual_draft_invoice(
             reference=reference,
         )
         inv_id = str(inv.get("InvoiceID"))
+        inv_num, inv_status = invoice_fields_for_hubspot(inv)
 
         patch_deal_xero(
             hs,
@@ -140,6 +139,8 @@ def create_manual_draft_invoice(
             {
                 settings.hubspot_deal_prop_xero_invoice_id: inv_id,
                 settings.hubspot_deal_prop_xero_contact_id: xc_id,
+                settings.hubspot_deal_prop_xero_invoice_number: inv_num,
+                settings.hubspot_deal_prop_xero_invoice_status: inv_status,
                 settings.hubspot_deal_prop_xero_last_error: "",
             },
         )
@@ -149,6 +150,8 @@ def create_manual_draft_invoice(
             deal_id=deal_id,
             xero_invoice_id=inv_id,
             xero_contact_id=xc_id,
+            xero_invoice_number=inv_num or None,
+            xero_invoice_status=inv_status or None,
         )
     except Exception as e:
         err = str(e)

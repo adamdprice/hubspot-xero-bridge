@@ -10,6 +10,15 @@ from typing import Any, Optional
 import httpx
 
 
+def invoice_fields_for_hubspot(inv: dict[str, Any]) -> tuple[str, str]:
+    """Xero InvoiceNumber and Status for HubSpot single-line text fields."""
+    raw_n = inv.get("InvoiceNumber")
+    num = "" if raw_n is None else str(raw_n).strip()
+    raw_s = inv.get("Status")
+    st = "" if raw_s is None else str(raw_s).strip()
+    return num, st
+
+
 class XeroClient:
     TOKEN_URL = "https://identity.xero.com/connect/token"
     API_BASE = "https://api.xero.com/api.xro/2.0"
@@ -27,9 +36,9 @@ class XeroClient:
         self.tenant_id = (tenant_id or "").strip()
         if not self.refresh_token or not self.tenant_id:
             raise ValueError(
-                "Xero is not connected yet. The refresh token is only returned after you complete "
-                "OAuth in the browser — open GET /auth/xero/start (or click “Connect Xero” in the UI), "
-                "then paste XERO_REFRESH_TOKEN and XERO_TENANT_ID from the success page into .env."
+                "Xero is not connected yet. Complete OAuth in the browser — open GET /auth/xero/start "
+                "(or click “Connect Xero” in the UI). The token is saved on disk when the token store is "
+                "enabled, or set XERO_REFRESH_TOKEN and XERO_TENANT_ID in the host environment."
             )
         self._access_token: Optional[str] = None
         self._access_expires_at: float = 0.0
@@ -55,6 +64,12 @@ class XeroClient:
         self._access_expires_at = now + float(data.get("expires_in", 1800))
         if data.get("refresh_token"):
             self.refresh_token = data["refresh_token"]
+            try:
+                from app.xero_token_store import save_refresh_token
+
+                save_refresh_token(self.refresh_token)
+            except Exception:
+                pass
         return self._access_token
 
     def _headers(self) -> dict[str, str]:
@@ -226,3 +241,24 @@ class XeroClient:
             data = r.json()
         invoices = data.get("Invoices") or []
         return invoices[0] if invoices else {}
+
+    def get_invoice_by_number(self, invoice_number: str) -> Optional[dict[str, Any]]:
+        """Resolve a single invoice by invoice number (Xero where clause)."""
+        n = (invoice_number or "").strip()
+        if not n:
+            return None
+        # Escape double quotes in number for where clause
+        safe = n.replace("\\", "\\\\").replace('"', '\\"')
+        where = f'InvoiceNumber=="{safe}"'
+        with httpx.Client(timeout=30.0) as client:
+            r = client.get(
+                f"{self.API_BASE}/Invoices",
+                params={"where": where},
+                headers=self._headers(),
+            )
+            r.raise_for_status()
+            data = r.json()
+        invoices = data.get("Invoices") or []
+        if not invoices:
+            return None
+        return invoices[0]

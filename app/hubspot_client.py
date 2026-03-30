@@ -11,6 +11,15 @@ from typing import Any, Optional
 import requests
 
 
+def hubspot_property_value_string(value: Any) -> str:
+    """CRM v3 expects string values; booleans as 'true'/'false', datetimes as ISO 8601 strings."""
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
 def _hubspot_error_message(response: requests.Response) -> str:
     try:
         body = response.json()
@@ -100,11 +109,12 @@ class HubSpotClient:
                 return None
             raise
 
-    def patch_deal(self, deal_id: str, properties: dict[str, str]) -> dict:
+    def patch_deal(self, deal_id: str, properties: dict[str, Any]) -> dict:
+        str_props = {k: hubspot_property_value_string(v) for k, v in properties.items()}
         return self._request(
             "PATCH",
             f"/crm/v3/objects/deals/{deal_id}",
-            json_body={"properties": properties},
+            json_body={"properties": str_props},
         )
 
     def get_deal_associated_contact_ids(self, deal_id: str) -> list[str]:
@@ -244,6 +254,40 @@ class HubSpotClient:
                             "propertyName": "dealname",
                             "operator": "CONTAINS_TOKEN",
                             "value": q,
+                        }
+                    ]
+                }
+            ],
+            "properties": props,
+            "limit": min(max(limit, 1), 100),
+        }
+        data = self._request("POST", "/crm/v3/objects/deals/search", json_body=body)
+        return data.get("results") or []
+
+    def search_deals_property_eq(
+        self,
+        property_name: str,
+        value: str,
+        *,
+        extra_properties: Optional[list[str]] = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        """Search deals where a property equals a string value (e.g. boolean 'true')."""
+        props = [
+            "dealname",
+            "amount",
+            "hs_object_id",
+        ]
+        if extra_properties:
+            props = list(dict.fromkeys(props + extra_properties))
+        body = {
+            "filterGroups": [
+                {
+                    "filters": [
+                        {
+                            "propertyName": property_name,
+                            "operator": "EQ",
+                            "value": value,
                         }
                     ]
                 }

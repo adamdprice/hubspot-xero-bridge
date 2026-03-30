@@ -350,10 +350,16 @@
       }
     }
 
-    function showInvoiceSuccess(invoiceId) {
+    function showInvoiceSuccess(payload) {
+      var id = typeof payload === "string" ? payload : (payload && payload.xero_invoice_id);
+      var num = typeof payload === "object" && payload ? payload.xero_invoice_number : "";
+      var st = typeof payload === "object" && payload ? payload.xero_invoice_status : "";
       document.getElementById("wizard-flow").hidden = true;
       document.getElementById("panel-success").hidden = false;
-      document.getElementById("success-invoice-id").textContent = "Xero invoice ID: " + invoiceId;
+      var parts = ["Xero invoice ID: " + id];
+      if (num) parts.push("Invoice number: " + num);
+      if (st) parts.push("Status: " + st);
+      document.getElementById("success-invoice-id").textContent = parts.join("\n");
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
 
@@ -522,6 +528,19 @@
         } else {
           html += "<p><em>No company on deal.</em></p>";
         }
+        var dx = data.deal || {};
+        if (dx.xero_invoice_id) {
+          html += "<p class='hint' style='margin-top:0.75rem'>Xero: ";
+          if (dx.xero_invoice_number) {
+            html += "INV <strong>" + escapeHtml(dx.xero_invoice_number) + "</strong>";
+          } else {
+            html += "<span class='mono'>" + escapeHtml(dx.xero_invoice_id) + "</span>";
+          }
+          if (dx.xero_invoice_status) {
+            html += " · " + escapeHtml(dx.xero_invoice_status);
+          }
+          html += "</p>";
+        }
         html += "<button type='button' class='btn-primary' id='btn-continue-billing'>Continue to Xero contact →</button>";
         sum.innerHTML = html;
         document.getElementById("btn-continue-billing").addEventListener("click", function () {
@@ -672,7 +691,7 @@
         });
         var data = await res.json();
         if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail || data));
-        showInvoiceSuccess(data.xero_invoice_id);
+        showInvoiceSuccess(data);
       } catch (e) {
         err.textContent = e.message;
         err.hidden = false;

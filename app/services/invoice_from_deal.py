@@ -1,6 +1,7 @@
 """
 Create a Xero draft invoice from a HubSpot deal (line items + billing contact).
-Idempotency: if the deal already has xero_invoice_id set, returns without calling Xero again.
+Idempotency: if the deal already has xero_invoice_id set, skips creating a new invoice but
+re-fetches that invoice from Xero to refresh invoice number and status on the deal.
 """
 from __future__ import annotations
 
@@ -11,7 +12,8 @@ from typing import Any, Optional
 from app.config import Settings
 from app.deal_sync import deal_xero_extra_property_names, patch_deal_xero
 from app.hubspot_client import HubSpotClient
-from app.xero_client import XeroClient
+from app.xero_credentials import make_xero_client
+from app.xero_client import invoice_fields_for_hubspot
 
 
 @dataclass
@@ -20,6 +22,8 @@ class InvoiceFromDealResult:
     deal_id: str
     xero_invoice_id: Optional[str] = None
     xero_contact_id: Optional[str] = None
+    xero_invoice_number: Optional[str] = None
+    xero_invoice_status: Optional[str] = None
     idempotent: bool = False
     error: Optional[str] = None
 
@@ -45,11 +49,30 @@ def create_xero_invoice_from_deal(
 
     existing_inv = (props.get(settings.hubspot_deal_prop_xero_invoice_id) or "").strip()
     if existing_inv:
+        num_out: Optional[str] = (props.get(settings.hubspot_deal_prop_xero_invoice_number) or "").strip() or None
+        st_out: Optional[str] = (props.get(settings.hubspot_deal_prop_xero_invoice_status) or "").strip() or None
+        try:
+            xero = make_xero_client(settings)
+            inv = xero.get_invoice(existing_inv)
+            num_out, st_out = invoice_fields_for_hubspot(inv)
+            patch_deal_xero(
+                hs,
+                settings,
+                deal_id,
+                {
+                    settings.hubspot_deal_prop_xero_invoice_number: num_out,
+                    settings.hubspot_deal_prop_xero_invoice_status: st_out,
+                },
+            )
+        except Exception:
+            pass
         return InvoiceFromDealResult(
             ok=True,
             deal_id=deal_id,
             xero_invoice_id=existing_inv,
             xero_contact_id=(props.get(settings.hubspot_deal_prop_xero_contact_id) or "").strip() or None,
+            xero_invoice_number=num_out,
+            xero_invoice_status=st_out,
             idempotent=True,
         )
 
@@ -65,12 +88,7 @@ def create_xero_invoice_from_deal(
             )
 
     try:
-        xero = XeroClient(
-            settings.xero_client_id,
-            settings.xero_client_secret,
-            settings.xero_refresh_token,
-            settings.xero_tenant_id,
-        )
+        xero = make_xero_client(settings)
 
         contact_ids = hs.get_deal_associated_contact_ids(deal_id)
         if not contact_ids:
@@ -138,6 +156,7 @@ def create_xero_invoice_from_deal(
             reference=reference,
         )
         inv_id = str(inv.get("InvoiceID"))
+        inv_num, inv_status = invoice_fields_for_hubspot(inv)
 
         patch_deal_xero(
             hs,
@@ -146,6 +165,8 @@ def create_xero_invoice_from_deal(
             {
                 settings.hubspot_deal_prop_xero_invoice_id: inv_id,
                 settings.hubspot_deal_prop_xero_contact_id: xc_id,
+                settings.hubspot_deal_prop_xero_invoice_number: inv_num,
+                settings.hubspot_deal_prop_xero_invoice_status: inv_status,
                 settings.hubspot_deal_prop_xero_last_error: "",
             },
         )
@@ -155,6 +176,8 @@ def create_xero_invoice_from_deal(
             deal_id=deal_id,
             xero_invoice_id=inv_id,
             xero_contact_id=xc_id,
+            xero_invoice_number=inv_num or None,
+            xero_invoice_status=inv_status or None,
             idempotent=False,
         )
     except Exception as e:

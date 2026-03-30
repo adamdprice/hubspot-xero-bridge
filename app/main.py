@@ -19,7 +19,9 @@ from app.deal_sync import deal_xero_search_property_names
 from app.hubspot_client import HubSpotClient
 from app.services.invoice_from_deal import create_xero_invoice_from_deal
 from app.services.manual_invoice import create_manual_draft_invoice
-from app.xero_client import XeroClient
+from app.services.sync_deal_xero import process_deals_pending_xero_sync, sync_deal_from_xero
+from app.xero_credentials import effective_xero_refresh_token, effective_xero_tenant_id, make_xero_client
+from app.xero_token_store import is_token_store_enabled, save_after_oauth
 from app.xero_oauth import DEFAULT_SCOPES, build_authorize_url, exchange_authorization_code, fetch_connections
 
 load_dotenv()
@@ -77,13 +79,17 @@ def api_status():
         return {
             "hubspot_configured": False,
             "xero_connected": False,
+            "xero_token_store": False,
             "xero_oauth_ready": False,
             "error": str(e),
         }
     return {
         "hubspot_configured": bool(s.hubspot_access_token.strip()),
         "hubspot_deal_sync_enabled": s.hubspot_deal_sync_enabled,
-        "xero_connected": bool(s.xero_refresh_token.strip() and s.xero_tenant_id.strip()),
+        "xero_connected": bool(
+            effective_xero_refresh_token(s).strip() and effective_xero_tenant_id(s).strip()
+        ),
+        "xero_token_store": is_token_store_enabled(),
         "xero_oauth_ready": bool(s.xero_client_id.strip() and s.xero_client_secret.strip()),
         "oauth_start_path": "/auth/xero/start",
         "defaults": {
@@ -180,13 +186,33 @@ def auth_xero_callback(
         for tid, name in rows
     ) or "<li>No tenants returned — check API consent.</li>"
 
+    first_tid: Optional[str] = rows[0][0] if rows else None
+    tenant_to_save = None
+    if first_tid and not (s.xero_tenant_id or "").strip():
+        tenant_to_save = first_tid
+    try:
+        save_after_oauth(refresh_token=refresh, tenant_id=tenant_to_save)
+    except Exception:
+        pass
+
+    saved_note = ""
+    if is_token_store_enabled():
+        saved_note = (
+            "<p style='background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px;padding:1rem'>"
+            "<strong>Production:</strong> This refresh token was saved on the server disk "
+            f"(<code>{html.escape(os.getenv('XERO_TOKEN_SQLITE_PATH') or '/tmp/hubspot_xero_tokens.db')}</code>). "
+            "You do not need to paste it into Railway variables unless you prefer env-only mode.</p>"
+        )
+
     return HTMLResponse(
         f"""<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"/><title>Xero connected</title></head>
 <body style="font-family:system-ui,sans-serif;padding:2rem;max-width:52rem;line-height:1.5">
-  <h1>Copy into your <code>.env</code></h1>
+  <h1>Xero connected</h1>
+  {saved_note}
   <p>The <strong>refresh token is not shown in the Xero developer portal</strong> — it is only issued here after you authorize.</p>
+  <p style="margin-top:1rem">Local dev: copy into your <code>.env</code> as below. Production with token store: restart is usually unnecessary.</p>
   <label style="display:block;margin-top:1rem;font-weight:600">XERO_REFRESH_TOKEN</label>
   <pre style="background:#f4f4f5;padding:1rem;overflow:auto;border-radius:8px">{html.escape(refresh)}</pre>
   <p style="margin-top:1.5rem;font-weight:600">Pick your organisation UUID for XERO_TENANT_ID:</p>
@@ -314,6 +340,9 @@ def deal_billing(deal_id: str):
             "id": deal_id,
             "name": (dprops.get("dealname") or "").strip(),
             "amount": dprops.get("amount"),
+            "xero_invoice_id": (dprops.get(settings.hubspot_deal_prop_xero_invoice_id) or "").strip(),
+            "xero_invoice_number": (dprops.get(settings.hubspot_deal_prop_xero_invoice_number) or "").strip(),
+            "xero_invoice_status": (dprops.get(settings.hubspot_deal_prop_xero_invoice_status) or "").strip(),
         },
         "contact": contact_payload,
         "company": company_payload,
@@ -327,12 +356,7 @@ def xero_contacts_search(q: str = Query("", min_length=1)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
     try:
-        xero = XeroClient(
-            settings.xero_client_id,
-            settings.xero_client_secret,
-            settings.xero_refresh_token,
-            settings.xero_tenant_id,
-        )
+        xero = make_xero_client(settings)
     except ValueError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
 
@@ -377,6 +401,8 @@ def post_manual_invoice(body: ManualInvoiceBody):
         "deal_id": result.deal_id,
         "xero_invoice_id": result.xero_invoice_id,
         "xero_contact_id": result.xero_contact_id,
+        "xero_invoice_number": result.xero_invoice_number,
+        "xero_invoice_status": result.xero_invoice_status,
     }
 
 
@@ -395,5 +421,64 @@ def post_invoice_from_deal(deal_id: str, body: Optional[FromDealBody] = None):
         "deal_id": result.deal_id,
         "xero_invoice_id": result.xero_invoice_id,
         "xero_contact_id": result.xero_contact_id,
+        "xero_invoice_number": result.xero_invoice_number,
+        "xero_invoice_status": result.xero_invoice_status,
         "idempotent": result.idempotent,
     }
+
+
+@app.post("/api/deals/{deal_id}/sync-from-xero")
+def post_sync_deal_from_xero(
+    deal_id: str,
+    force: bool = Query(False, description="If true, sync even when sync_with_xero is not checked."),
+):
+    """Pull invoice status from Xero into the deal; clears sync_with_xero when done (success or error)."""
+    try:
+        settings = get_settings()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+    result = sync_deal_from_xero(settings, deal_id.strip(), require_sync_flag=not force)
+    if result.skipped:
+        raise HTTPException(
+            status_code=400,
+            detail="Set sync_with_xero to true on this deal first, or call with ?force=true.",
+        )
+    if not result.ok:
+        raise HTTPException(status_code=400, detail=result.error or "Sync failed")
+    return {"deal_id": result.deal_id, "ok": True}
+
+
+@app.post("/api/cron/sync-xero")
+def post_cron_sync_xero(max_deals: int = Query(50, ge=1, le=100)):
+    """Process deals where sync_with_xero is true (for Railway cron or scheduled HTTP). Uses same auth as the bridge."""
+    try:
+        settings = get_settings()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+    return process_deals_pending_xero_sync(settings, max_deals=max_deals)
+
+
+@app.post("/api/webhooks/hubspot/sync-deal")
+def post_webhook_sync_deal(body: dict[str, Any]):
+    """
+    Trigger sync for one deal (e.g. HubSpot workflow HTTP action).
+    JSON: {"dealId": "123"} or {"objectId": 123}
+    """
+    raw = body.get("dealId") or body.get("deal_id") or body.get("objectId")
+    if raw is None:
+        raise HTTPException(status_code=400, detail="Provide dealId, deal_id, or objectId")
+    deal_id = str(raw).strip()
+    if not deal_id:
+        raise HTTPException(status_code=400, detail="Empty deal id")
+
+    try:
+        settings = get_settings()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+    result = sync_deal_from_xero(settings, deal_id, require_sync_flag=False)
+    if not result.ok:
+        raise HTTPException(status_code=400, detail=result.error or "Sync failed")
+    return {"deal_id": result.deal_id, "ok": True}

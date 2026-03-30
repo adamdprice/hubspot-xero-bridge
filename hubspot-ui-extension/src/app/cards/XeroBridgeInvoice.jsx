@@ -6,7 +6,7 @@ import { Flex, Text, Link, hubspot, useExtensionApi } from "@hubspot/ui-extensio
  * Example: "https://abc123.ngrok-free.app" — replace with your real URL, then run `hs project upload`.
  * Free ngrok URLs change when you restart the tunnel — update this and re-upload if the host changes.
  */
-const BRIDGE_BASE_URL = "https://nonfutile-florida-epexegetically.ngrok-free.dev";
+const BRIDGE_BASE_URL = "https://web-production-02635.up.railway.app";
 
 /** Must match Railway (or host) env BRIDGE_AUTH_TOKEN when gate is enabled. Leave "" for local dev with no token. */
 const BRIDGE_AUTH_TOKEN = "";

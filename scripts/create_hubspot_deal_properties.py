@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Create the four deal properties expected by hubspot-xero-bridge.
+Create the deal properties expected by hubspot-xero-bridge (Xero IDs, sync, invoice display).
 
 Requires HUBSPOT_ACCESS_TOKEN in .env (or env) with scope:
   crm.schemas.deals.write
@@ -35,26 +35,65 @@ BASE = "https://api.hubapi.com"
 # Standard deal group; use another if your portal uses a custom group (see GET /crm/v3/properties/deals/groups)
 GROUP = "dealinformation"
 
+TEXT = {"type": "string", "fieldType": "text"}
+BOOL = {"type": "bool", "fieldType": "booleancheckbox"}
+DATETIME = {"type": "datetime", "fieldType": "date"}
+DATE = {"type": "date", "fieldType": "date"}
+
 PROPERTIES = [
     {
         "name": "xero_contact_id",
         "label": "Xero contact ID",
         "description": "Xero ContactID synced by the HubSpot–Xero bridge.",
+        "field": TEXT,
     },
     {
         "name": "xero_invoice_id",
         "label": "Xero invoice ID",
         "description": "Latest Xero InvoiceID for this deal (bridge).",
+        "field": TEXT,
+    },
+    {
+        "name": "invoice_number",
+        "label": "Invoice number",
+        "description": "Xero InvoiceNumber (e.g. INV-0001), synced by the HubSpot–Xero bridge.",
+        "field": TEXT,
+    },
+    {
+        "name": "invoice_status",
+        "label": "Invoice status",
+        "description": "Xero invoice Status (e.g. DRAFT, AUTHORISED), synced by the bridge.",
+        "field": TEXT,
     },
     {
         "name": "xero_sync_idempotency_key",
         "label": "Xero sync idempotency key",
         "description": "Internal idempotency key for invoice sync (bridge).",
+        "field": TEXT,
     },
     {
         "name": "xero_sync_last_error",
         "label": "Xero sync last error",
         "description": "Last sync error message from the bridge (if any).",
+        "field": TEXT,
+    },
+    {
+        "name": "sync_with_xero",
+        "label": "Sync with Xero",
+        "description": "When true, the bridge pulls invoice status from Xero (cron or sync endpoint).",
+        "field": BOOL,
+    },
+    {
+        "name": "last_xero_sync",
+        "label": "Last Xero sync",
+        "description": "When the deal was last synced from Xero (bridge).",
+        "field": DATETIME,
+    },
+    {
+        "name": "xero_sync_last_error_date",
+        "label": "Xero sync last error date",
+        "description": "Date of the last sync error from Xero (bridge).",
+        "field": DATE,
     },
 ]
 
@@ -83,14 +122,14 @@ def main() -> int:
         if r.status_code not in (404,):
             print(f"GET {name}: {r.status_code} {r.text[:300]}", file=sys.stderr)
 
+        field = p.get("field") or TEXT
         body = {
             "name": name,
             "label": p["label"],
-            "type": "string",
-            "fieldType": "text",
             "groupName": GROUP,
             "description": p["description"],
             "hasUniqueValue": False,
+            **field,
         }
         r = session.post(f"{BASE}/crm/v3/properties/deals", json=body, timeout=30)
         if r.status_code in (200, 201):

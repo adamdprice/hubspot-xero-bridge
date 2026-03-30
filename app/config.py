@@ -15,8 +15,14 @@ class Settings(BaseSettings):
 
     hubspot_deal_prop_xero_contact_id: str = "xero_contact_id"
     hubspot_deal_prop_xero_invoice_id: str = "xero_invoice_id"
+    hubspot_deal_prop_xero_invoice_number: str = "invoice_number"
+    hubspot_deal_prop_xero_invoice_status: str = "invoice_status"
     hubspot_deal_prop_xero_sync_key: str = "xero_sync_idempotency_key"
     hubspot_deal_prop_xero_last_error: str = "xero_sync_last_error"
+    # Optional: set sync_with_xero=true on a deal to pull status from Xero (cron or POST /api/deals/{id}/sync-from-xero)
+    hubspot_deal_prop_sync_with_xero: str = "sync_with_xero"
+    hubspot_deal_prop_last_xero_sync: str = "last_xero_sync"
+    hubspot_deal_prop_xero_sync_last_error_date: str = "xero_sync_last_error_date"
 
     # OAuth app credentials (always required for Xero API after you connect)
     xero_client_id: str = ""
