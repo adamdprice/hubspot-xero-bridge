@@ -17,6 +17,28 @@ if TYPE_CHECKING:
     from starlette.requests import Request
 
 
+def _canonical_request_url_for_hubspot(request: Request) -> str:
+    """
+    URL HubSpot signs for v2/v3: public scheme + host + path (+ query).
+    Behind reverse proxies, use X-Forwarded-* / Host so it matches the Test URL in HubSpot.
+    """
+    proto = (request.headers.get("x-forwarded-proto") or request.url.scheme or "https").strip()
+    if "," in proto:
+        proto = proto.split(",")[0].strip()
+    if proto not in ("http", "https"):
+        proto = "https"
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").strip()
+    if "," in host:
+        host = host.split(",")[0].strip()
+    if not host:
+        return str(request.url)
+    path = request.url.path or ""
+    qs = request.url.query
+    if qs:
+        return f"{proto}://{host}{path}?{qs}"
+    return f"{proto}://{host}{path}"
+
+
 def _decode_uri_for_hubspot_v3(uri: str) -> str:
     """Decode percent-encoding for characters HubSpot lists for v3 validation."""
     for enc, dec in (
@@ -45,26 +67,32 @@ def _verify_v2(request: Request, body: bytes, client_secret: str, received: str)
         body_str = body.decode("utf-8")
     except UnicodeDecodeError:
         return False
-    uri = str(request.url)
     method = request.method.upper()
-    source = client_secret + method + uri + body_str
-    expected = hashlib.sha256(source.encode("utf-8")).hexdigest()
     rx = received.strip().lower()
-    ex = expected.lower()
-    return len(rx) == len(ex) and secrets.compare_digest(ex, rx)
+    for uri in (_canonical_request_url_for_hubspot(request), str(request.url)):
+        source = client_secret + method + uri + body_str
+        expected = hashlib.sha256(source.encode("utf-8")).hexdigest()
+        ex = expected.lower()
+        if len(rx) == len(ex) and secrets.compare_digest(ex, rx):
+            return True
+    return False
 
 
 def _verify_v1(body: bytes, client_secret: str, received: str) -> bool:
     if not received:
         return False
+    rx = received.strip().lower()
     try:
         raw = body.decode("utf-8")
     except UnicodeDecodeError:
         return False
     expected = hashlib.sha256((client_secret + raw).encode("utf-8")).hexdigest()
-    rx = received.strip().lower()
     ex = expected.lower()
-    return len(rx) == len(ex) and secrets.compare_digest(ex, rx)
+    if len(rx) == len(ex) and secrets.compare_digest(ex, rx):
+        return True
+    # Alternate: hash raw bytes after secret UTF-8 bytes (some senders)
+    ex2 = hashlib.sha256(client_secret.encode("utf-8") + body).hexdigest().lower()
+    return len(rx) == len(ex2) and secrets.compare_digest(ex2, rx)
 
 
 def _verify_v3(request: Request, body: bytes, client_secret: str, received: str) -> bool:
@@ -81,12 +109,16 @@ def _verify_v3(request: Request, body: bytes, client_secret: str, received: str)
         body_str = body.decode("utf-8")
     except UnicodeDecodeError:
         return False
-    uri = _decode_uri_for_hubspot_v3(str(request.url))
-    raw = f"{request.method.upper()}{uri}{body_str}{ts_raw}"
-    mac = hmac.new(client_secret.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256).digest()
-    expected_b64 = base64.b64encode(mac).decode("ascii")
     rx = received.strip()
-    return len(rx) == len(expected_b64) and secrets.compare_digest(expected_b64, rx)
+    method = request.method.upper()
+    for url in (_canonical_request_url_for_hubspot(request), str(request.url)):
+        uri = _decode_uri_for_hubspot_v3(url)
+        raw = f"{method}{uri}{body_str}{ts_raw}"
+        mac = hmac.new(client_secret.encode("utf-8"), raw.encode("utf-8"), hashlib.sha256).digest()
+        expected_b64 = base64.b64encode(mac).decode("ascii")
+        if len(rx) == len(expected_b64) and secrets.compare_digest(expected_b64, rx):
+            return True
+    return False
 
 
 def verify_hubspot_webhook_signature(request: Request, body: bytes, client_secret: str) -> bool:
@@ -108,5 +140,10 @@ def verify_hubspot_webhook_signature(request: Request, body: bytes, client_secre
     if sig_main:
         if ver == "v2":
             return _verify_v2(request, body, secret, sig_main)
-        return _verify_v1(body, secret, sig_main)
+        if _verify_v1(body, secret, sig_main):
+            return True
+        # v1 is documented for CRM webhooks; if it fails (proxy URL mismatch), try v2 with canonical URL.
+        if ver in ("", "v1", "1"):
+            return _verify_v2(request, body, secret, sig_main)
+        return False
     return False

@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from pydantic import BaseModel, Field
 
 from app.auth_bridge import BridgeAuthMiddleware, cookie_https_only, session_secret_key
@@ -36,6 +37,7 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 app = FastAPI(title="HubSpot–Xero bridge", version="0.2.0")
 
 # Starlette inserts each add_middleware at index 0, so last-added is outermost on the request path.
+# ProxyHeaders first (outermost): trust X-Forwarded-Proto / Host so webhook signatures (v2/v3) match public URL.
 # Session must run before BridgeAuth (which reads request.session).
 app.add_middleware(BridgeAuthMiddleware)
 app.add_middleware(
@@ -45,6 +47,7 @@ app.add_middleware(
     same_site="lax",
     https_only=cookie_https_only(),
 )
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
 # Short-lived CSRF state for OAuth (in production, use signed cookies or server-side session store)
 _oauth_states: dict[str, float] = {}
