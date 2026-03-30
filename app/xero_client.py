@@ -13,12 +13,50 @@ import httpx
 _log = logging.getLogger(__name__)
 
 
+def _parse_money(val: Any) -> float:
+    try:
+        if val is None or val == "":
+            return 0.0
+        return float(val)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def invoice_status_ui_label(inv: dict[str, Any]) -> str:
+    """
+    Map Xero invoice API data to wording similar to the Xero web app (not the raw Status enum).
+
+    Raw API uses values like AUTHORISED; the UI shows e.g. "Awaiting payment" for unpaid sales invoices.
+    Uses Status plus AmountDue where relevant.
+    """
+    raw = inv.get("Status")
+    st = "" if raw is None else str(raw).strip().upper()
+    amount_due = _parse_money(inv.get("AmountDue"))
+
+    if st == "VOIDED":
+        return "Voided"
+    if st == "DELETED":
+        return "Deleted"
+    if st == "DRAFT":
+        return "Draft"
+    if st == "SUBMITTED":
+        return "Submitted"
+    if st == "PAID":
+        return "Paid"
+    if st == "AUTHORISED":
+        if amount_due > 1e-6:
+            return "Awaiting payment"
+        return "Paid"
+    if st:
+        return st.replace("_", " ").title()
+    return ""
+
+
 def invoice_fields_for_hubspot(inv: dict[str, Any]) -> tuple[str, str]:
-    """Xero InvoiceNumber and Status for HubSpot single-line text fields."""
+    """Invoice number and Xero UI–style status label for HubSpot single-line text fields."""
     raw_n = inv.get("InvoiceNumber")
     num = "" if raw_n is None else str(raw_n).strip()
-    raw_s = inv.get("Status")
-    st = "" if raw_s is None else str(raw_s).strip()
+    st = invoice_status_ui_label(inv)
     return num, st
 
 
