@@ -14,7 +14,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from pydantic import BaseModel, Field
 
 from app.auth_bridge import BridgeAuthMiddleware, cookie_https_only, session_secret_key
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.deal_sync import deal_xero_search_property_names
 from app.hubspot_client import HubSpotClient
 from app.services.invoice_from_deal import create_xero_invoice_from_deal
@@ -500,25 +500,64 @@ def post_cron_sync_xero(max_deals: int = Query(50, ge=1, le=100)):
     return process_deals_pending_xero_sync(settings, max_deals=max_deals)
 
 
+def _hubspot_webhook_deal_id(body: dict[str, Any]) -> Optional[str]:
+    for key in ("objectId", "dealId", "deal_id"):
+        v = body.get(key)
+        if v is not None and str(v).strip():
+            return str(v).strip()
+    return None
+
+
+def _hubspot_webhook_skip(body: dict[str, Any], settings: Settings) -> tuple[bool, str]:
+    """
+    Skip noisy CRM webhooks (wrong property, cleared dropdown).
+    Plain workflow JSON without subscriptionType is never skipped here.
+    """
+    sub = (body.get("subscriptionType") or "").strip()
+    if sub != "deal.propertyChange":
+        return False, ""
+    want_prop = (settings.hubspot_deal_prop_xero_sync_trigger or "").strip()
+    pn = (body.get("propertyName") or "").strip()
+    if want_prop and pn and pn != want_prop:
+        return True, "ignored_property"
+    if want_prop and pn == want_prop:
+        pv = (body.get("propertyValue") or "").strip()
+        want_val = (settings.hubspot_deal_xero_sync_trigger_value or "").strip()
+        if want_val and not pv:
+            return True, "cleared_trigger"
+        if want_val and pv and pv.lower() != want_val.lower():
+            return True, "not_sync_selection"
+    return False, ""
+
+
 @app.post("/api/webhooks/hubspot/sync-deal")
 def post_webhook_sync_deal(body: dict[str, Any]):
     """
-    Trigger sync for one deal (e.g. HubSpot workflow HTTP action).
-    JSON: {"dealId": "123"} or {"objectId": 123}
+    Trigger sync for one deal.
+
+    HubSpot CRM webhooks (deal.propertyChange) send objectId, propertyName, propertyValue, etc.
+    Legacy / workflow: {"dealId": "123"} or {"objectId": 123}.
     """
-    raw = body.get("dealId") or body.get("deal_id") or body.get("objectId")
-    if raw is None:
-        raise HTTPException(status_code=400, detail="Provide dealId, deal_id, or objectId")
-    deal_id = str(raw).strip()
+    deal_id = _hubspot_webhook_deal_id(body)
     if not deal_id:
-        raise HTTPException(status_code=400, detail="Empty deal id")
+        raise HTTPException(status_code=400, detail="Provide objectId, dealId, or deal_id")
 
     try:
         settings = get_settings()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
-    result = sync_deal_from_xero(settings, deal_id, require_sync_flag=False)
+    skip, reason = _hubspot_webhook_skip(body, settings)
+    if skip:
+        return {"deal_id": deal_id, "ok": True, "skipped": True, "reason": reason}
+
+    # Native HubSpot payload: only sync when deal still shows a sync request (avoids loops on clear).
+    is_hubspot_crm = bool((body.get("subscriptionType") or "").strip())
+    require_flag = is_hubspot_crm
+
+    result = sync_deal_from_xero(settings, deal_id, require_sync_flag=require_flag)
+    if result.skipped:
+        return {"deal_id": deal_id, "ok": True, "skipped": True, "reason": "no_sync_pending_on_deal"}
     if not result.ok:
         raise HTTPException(status_code=400, detail=result.error or "Sync failed")
     return {"deal_id": result.deal_id, "ok": True}
