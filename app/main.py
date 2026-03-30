@@ -565,7 +565,7 @@ def post_sync_deal_from_xero(
     deal_id: str,
     force: bool = Query(False, description="If true, sync even when no sync flag/trigger is set."),
 ):
-    """Pull invoice status from Xero into the deal; clears xero_sync_trigger (and optional sync_with_xero) when done."""
+    """Pull invoice status from Xero into the deal; clears xero_sync_trigger (and optional sync_with_xero) when done. Sync is allowed when xero_invoice_id is set without the trigger."""
     try:
         settings = get_settings()
     except Exception as e:
@@ -576,7 +576,7 @@ def post_sync_deal_from_xero(
         raise HTTPException(
             status_code=400,
             detail=(
-                "Set xero_sync_trigger (e.g. Sync), or optional sync_with_xero if configured, on this deal first, "
+                "Set xero_sync_trigger (e.g. Sync), optional sync_with_xero, or xero_invoice_id on this deal first, "
                 "or call with ?force=true."
             ),
         )

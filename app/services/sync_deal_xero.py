@@ -1,9 +1,9 @@
 """
 Pull invoice status (and number / Xero ID) from Xero into HubSpot when sync is requested.
 
-Request sync via optional sync_with_xero (boolean) and/or xero_sync_trigger dropdown (default option value "Sync").
+Request sync via optional sync_with_xero (boolean), xero_sync_trigger dropdown (e.g. Sync), or a known xero_invoice_id.
 
-Uses the deal's Xero invoice number field and/or xero_invoice_id to find the invoice in Xero (number is tried first when set).
+Uses the deal's Xero invoice number and/or xero_invoice_id to find the invoice in Xero (number first when usable; ID fills/updates number on the deal).
 """
 from __future__ import annotations
 
@@ -64,15 +64,18 @@ def _xero_invoice_number_is_ignored(inv_num_hs: str, settings: Settings) -> bool
 
 
 def _sync_requested(props: dict[str, Any], settings: Settings) -> bool:
-    """True if the deal asks for a Xero pull (boolean and/or dropdown trigger)."""
+    """True if the deal asks for a Xero pull (boolean, dropdown trigger, or known xero_invoice_id)."""
     sw = (settings.hubspot_deal_prop_sync_with_xero or "").strip()
     if sw and _hs_bool_true(props.get(sw)):
         return True
     raw = (props.get(settings.hubspot_deal_prop_xero_sync_trigger) or "").strip()
     want = (settings.hubspot_deal_xero_sync_trigger_value or "").strip()
-    if not raw or not want:
-        return False
-    return raw.lower() == want.lower()
+    if raw and want and raw.lower() == want.lower():
+        return True
+    inv_id = (props.get(settings.hubspot_deal_prop_xero_invoice_id) or "").strip()
+    if inv_id:
+        return True
+    return False
 
 
 @dataclass
@@ -112,7 +115,8 @@ def sync_deal_from_xero(
     inv_id = (props.get(settings.hubspot_deal_prop_xero_invoice_id) or "").strip()
     inv_num_hs = (props.get(settings.hubspot_deal_prop_xero_invoice_number) or "").strip()
 
-    if inv_num_hs and _xero_invoice_number_is_ignored(inv_num_hs, settings):
+    # Ignore placeholder numbers (e.g. OLD) only when we cannot resolve the invoice by Xero ID.
+    if inv_num_hs and _xero_invoice_number_is_ignored(inv_num_hs, settings) and not inv_id:
         return SyncDealXeroResult(ok=True, deal_id=deal_id, skipped=True)
 
     try:
@@ -123,10 +127,13 @@ def sync_deal_from_xero(
 
     try:
         inv: Optional[dict[str, Any]] = None
-        # Prefer invoice number when present (most users only have INV-… on the deal). Stale/wrong UUID
-        # would otherwise 404 and skip the number path.
+        # Prefer invoice number when present, unless it's an ignored placeholder (e.g. OLD) and we have a UUID.
         if inv_num_hs:
-            inv = xero.get_invoice_by_number(inv_num_hs)
+            use_number_lookup = (
+                not inv_id or not _xero_invoice_number_is_ignored(inv_num_hs, settings)
+            )
+            if use_number_lookup:
+                inv = xero.get_invoice_by_number(inv_num_hs)
         if inv is None and inv_id:
             try:
                 inv = xero.get_invoice(inv_id)
@@ -139,8 +146,8 @@ def sync_deal_from_xero(
                 inv = None
         if not inv:
             msg = (
-                "No Xero invoice found. Set the Xero invoice number property and/or xero_invoice_id on the deal "
-                "(number is looked up first when both are set)."
+                "No Xero invoice found. Set xero_invoice_id and/or a real Xero invoice number on the deal "
+                "(number is tried first when both are set; placeholders like OLD require xero_invoice_id)."
             )
             _patch_sync_error(hs, settings, deal_id, msg)
             return SyncDealXeroResult(ok=False, deal_id=deal_id, error=msg)
@@ -217,13 +224,29 @@ def process_deals_pending_xero_sync(settings: Settings, *, max_deals: int = 50) 
     return {"queued": len(rows), "results": results}
 
 
+def _deal_row_skip_for_invoice_batch_sync(
+    row: dict[str, Any],
+    *,
+    prop: str,
+    id_prop: str,
+    settings: Settings,
+) -> bool:
+    """Skip when invoice number is a placeholder like OLD and there is no xero_invoice_id to resolve."""
+    props = row.get("properties") or {}
+    inv_raw = (props.get(prop) or "").strip() if prop else ""
+    id_raw = (props.get(id_prop) or "").strip() if id_prop else ""
+    if inv_raw and _xero_invoice_number_is_ignored(inv_raw, settings) and not id_raw:
+        return True
+    return False
+
+
 def process_deals_with_xero_invoice_number_sync(
     settings: Settings,
     *,
     max_deals: int = 500,
 ) -> dict[str, Any]:
     """
-    Find deals where the Xero invoice number field is set (HubSpot HAS_PROPERTY) and pull status from Xero.
+    Find deals with xero_invoice_number and/or xero_invoice_id set (HubSpot HAS_PROPERTY) and pull from Xero.
     Does not require xero_sync_trigger or sync_with_xero — for scheduled / cron sync.
     """
     if settings.hubspot_xero_invoice_number_sync_disabled:
@@ -234,35 +257,52 @@ def process_deals_with_xero_invoice_number_sync(
             "reason": "hubspot_xero_invoice_number_sync_disabled",
         }
     prop = (settings.hubspot_deal_prop_xero_invoice_number or "").strip()
-    if not prop:
-        return {"queued": 0, "results": [], "error": "hubspot_deal_prop_xero_invoice_number is not configured"}
+    id_prop = (settings.hubspot_deal_prop_xero_invoice_id or "").strip()
+    if not prop and not id_prop:
+        return {
+            "queued": 0,
+            "results": [],
+            "error": "configure hubspot_deal_prop_xero_invoice_number and/or xero_invoice_id",
+        }
 
     hs = HubSpotClient(settings.hubspot_access_token)
     extra = deal_xero_sync_read_property_names(settings)
+    seen_ids: set[str] = set()
     deal_ids: list[str] = []
-    after: Optional[str] = None
-    while len(deal_ids) < max_deals:
-        page_limit = min(100, max_deals - len(deal_ids))
-        batch, next_after = hs.search_deals_has_property(
-            prop,
-            extra_properties=extra,
-            limit=page_limit,
-            after=after,
-        )
-        for row in batch:
-            if len(deal_ids) >= max_deals:
+
+    def _append_row(row: dict[str, Any]) -> None:
+        did = str(row.get("id") or "").strip()
+        if not did or did in seen_ids:
+            return
+        if _deal_row_skip_for_invoice_batch_sync(row, prop=prop, id_prop=id_prop, settings=settings):
+            return
+        seen_ids.add(did)
+        deal_ids.append(did)
+
+    def _paginate_has_property(property_name: str) -> None:
+        if not property_name or len(deal_ids) >= max_deals:
+            return
+        after: Optional[str] = None
+        while len(deal_ids) < max_deals:
+            page_limit = min(100, max_deals - len(deal_ids))
+            batch, next_after = hs.search_deals_has_property(
+                property_name,
+                extra_properties=extra,
+                limit=page_limit,
+                after=after,
+            )
+            for row in batch:
+                if len(deal_ids) >= max_deals:
+                    break
+                _append_row(row)
+            if not next_after or not batch:
                 break
-            did = str(row.get("id") or "").strip()
-            if not did:
-                continue
-            raw_num = (row.get("properties") or {}).get(prop) if prop else None
-            inv_raw = (raw_num or "").strip() if raw_num is not None else ""
-            if inv_raw and _xero_invoice_number_is_ignored(inv_raw, settings):
-                continue
-            deal_ids.append(did)
-        if not next_after or not batch:
-            break
-        after = next_after
+            after = next_after
+
+    if prop:
+        _paginate_has_property(prop)
+    if id_prop:
+        _paginate_has_property(id_prop)
 
     results: list[dict[str, Any]] = []
     for did in deal_ids:
