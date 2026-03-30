@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     # In-process timer: pull Xero status for deals with hubspot_deal_prop_xero_invoice_number set (HAS_PROPERTY).
     # Set to 0 to disable the background loop (e.g. use Railway cron on /api/cron/sync-xero-by-invoice-number only).
     # Use a single uvicorn worker if you enable this, or each worker would run its own loop.
-    hubspot_xero_invoice_number_sync_interval_seconds: int = 600
+    hubspot_xero_invoice_number_sync_interval_seconds: int = 3600
     hubspot_xero_invoice_number_sync_max_deals: int = 150
     # Temporarily stop invoice-number batch sync (timer + POST /api/cron/sync-xero-by-invoice-number). Webhook trigger sync unchanged.
     hubspot_xero_invoice_number_sync_disabled: bool = False
