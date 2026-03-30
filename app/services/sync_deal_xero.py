@@ -83,8 +83,8 @@ def sync_deal_from_xero(
             ok=False,
             deal_id=deal_id,
             error=(
-                "HUBSPOT_DEAL_SYNC_ENABLED is false — set to true in Railway so invoice fields "
-                "can be written to the deal (otherwise sync runs but HubSpot is not updated)."
+                "HUBSPOT_DEAL_SYNC_ENABLED is false — in Railway Variables set it to true, or delete the variable "
+                "(default is true) so invoice fields can be written to the deal."
             ),
         )
 

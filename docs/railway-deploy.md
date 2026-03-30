@@ -39,7 +39,7 @@ In Railway → your service → **Variables**, add everything the app needs (sam
 | `XERO_REDIRECT_URI` | **Must** be `https://YOUR-RAILWAY-URL.up.railway.app/auth/xero/callback` (use your real Railway domain) |
 | `BRIDGE_AUTH_TOKEN` | `openssl rand -hex 32` — same value in HubSpot `XeroBridgeInvoice.jsx` as `BRIDGE_AUTH_TOKEN` |
 | `BRIDGE_COOKIE_SECURE` | `true` |
-| `HUBSPOT_DEAL_SYNC_ENABLED` | `false` or `true` depending on whether deal properties exist |
+| `HUBSPOT_DEAL_SYNC_ENABLED` | `true` for production (omit to default true). Use `false` only before deal properties exist |
 
 Optional: `HUBSPOT_DEAL_PROP_*`, `XERO_*` line defaults — see `.env.example`.
 
