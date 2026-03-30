@@ -625,18 +625,19 @@ async def post_webhook_sync_deal(request: Request):
         did = _hubspot_webhook_deal_id(body)
         if did:
             received_ids.append(did)
+    try:
+        settings = get_settings()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
     _webhook_stdout_line(
         {
             "step": "received",
             "object_ids": received_ids,
             "subscription_types": _peek_subscription_types_from_body(body),
+            "hubspot_deal_sync_enabled": settings.hubspot_deal_sync_enabled,
         }
     )
-
-    try:
-        settings = get_settings()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
 
     if isinstance(body, list):
         if not body:
@@ -656,9 +657,7 @@ async def post_webhook_sync_deal(request: Request):
         return {"ok": True, "batch": True, "results": results}
 
     if isinstance(body, dict):
-        out = _process_hubspot_sync_deal_event(body, settings)
-        if not out.get("ok") and "error" in out:
-            raise HTTPException(status_code=400, detail=out.get("error", "Sync failed"))
-        return out
+        # Always 200 + JSON body so HubSpot delivery logs show the error (400 would retry forever).
+        return _process_hubspot_sync_deal_event(body, settings)
 
     raise HTTPException(status_code=400, detail="Expected JSON object or array")
