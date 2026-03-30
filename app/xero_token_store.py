@@ -2,8 +2,8 @@
 Persist Xero refresh token (and optional tenant id) on disk so rotation survives restarts.
 
 Uses SQLite (stdlib). Set XERO_TOKEN_SQLITE_PATH (default: /tmp/hubspot_xero_tokens.db).
-On Railway, mount a volume at /data and set XERO_TOKEN_SQLITE_PATH=/data/xero_tokens.db
-so tokens survive redeploys.
+On Railway, mount a volume at /data and set XERO_TOKEN_SQLITE_PATH to either the full file path
+(e.g. /data/xero_tokens.db) or the mount directory (/data) — a directory is turned into /data/xero_tokens.db.
 
 Disable with XERO_DISABLE_TOKEN_STORE=1 (env-only mode).
 """
@@ -39,10 +39,24 @@ def get_resolved_sqlite_path() -> str:
     return _path()
 
 
+def _finalize_database_path(p: str) -> str:
+    """
+    SQLite needs a file path. If XERO_TOKEN_SQLITE_PATH is set to a directory (e.g. /data),
+    append xero_tokens.db — opening /data as a DB causes 'unable to open database file'.
+    """
+    p = p.strip().rstrip("/")
+    if not p:
+        return p
+    lower = p.lower()
+    if lower.endswith((".db", ".sqlite", ".sqlite3")):
+        return p
+    return str(Path(p) / "xero_tokens.db")
+
+
 def _path() -> str:
     explicit = (os.getenv("XERO_TOKEN_SQLITE_PATH") or "").strip()
     if explicit:
-        return explicit
+        return _finalize_database_path(explicit)
     # Railway injects this when a volume is attached — default DB lives on the volume
     vol = (os.getenv("RAILWAY_VOLUME_MOUNT_PATH") or "").strip()
     if vol:
