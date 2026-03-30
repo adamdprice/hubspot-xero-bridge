@@ -208,7 +208,7 @@ def auth_xero_callback(
     except Exception as e:
         oauth_save_error = str(e)
 
-    db_path = html.escape(os.getenv("XERO_TOKEN_SQLITE_PATH") or "/tmp/hubspot_xero_tokens.db")
+    db_path = html.escape(get_resolved_sqlite_path())
     saved_note = ""
     if is_token_store_enabled():
         if oauth_save_ok:

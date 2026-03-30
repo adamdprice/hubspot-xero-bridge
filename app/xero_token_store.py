@@ -40,20 +40,38 @@ def get_resolved_sqlite_path() -> str:
 
 
 def _path() -> str:
-    p = (os.getenv("XERO_TOKEN_SQLITE_PATH") or "").strip()
-    if p:
-        return p
+    explicit = (os.getenv("XERO_TOKEN_SQLITE_PATH") or "").strip()
+    if explicit:
+        return explicit
+    # Railway injects this when a volume is attached — default DB lives on the volume
+    vol = (os.getenv("RAILWAY_VOLUME_MOUNT_PATH") or "").strip()
+    if vol:
+        return str(Path(vol) / "xero_tokens.db")
     return "/tmp/hubspot_xero_tokens.db"
+
+
+def _hint_for_sqlite_error(exc: Exception, path: str) -> str:
+    msg = str(exc).lower()
+    if "unable to open database file" not in msg and "readonly" not in msg and "permission" not in msg:
+        return ""
+    return (
+        " On Railway, volumes are mounted as root; if the app runs as a non-root user it cannot "
+        "create files there. Set variable RAILWAY_RUN_UID=0 on the service (see Railway volumes docs), "
+        "or paste XERO_REFRESH_TOKEN into variables instead of using the volume."
+    )
 
 
 def _ensure_db() -> None:
     if not _enabled():
         return
     path = _path()
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(path) as conn:
-        conn.execute(_TABLE)
-        conn.commit()
+    try:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(path) as conn:
+            conn.execute(_TABLE)
+            conn.commit()
+    except Exception as e:
+        raise RuntimeError(f"{e} (path={path!r}){_hint_for_sqlite_error(e, path)}") from e
 
 
 def get_stored_refresh_token() -> Optional[str]:
@@ -92,16 +110,22 @@ def save_refresh_token(token: str) -> None:
     t = (token or "").strip()
     if not t:
         return
-    _ensure_db()
-    with sqlite3.connect(_path()) as conn:
-        conn.execute(
-            """INSERT INTO xero_oauth (id, refresh_token) VALUES (1, ?)
-               ON CONFLICT(id) DO UPDATE SET refresh_token = excluded.refresh_token""",
-            (t,),
-        )
-        conn.commit()
+    path = _path()
     try:
-        os.chmod(_path(), 0o600)
+        _ensure_db()
+        with sqlite3.connect(path) as conn:
+            conn.execute(
+                """INSERT INTO xero_oauth (id, refresh_token) VALUES (1, ?)
+                   ON CONFLICT(id) DO UPDATE SET refresh_token = excluded.refresh_token""",
+                (t,),
+            )
+            conn.commit()
+    except RuntimeError:
+        raise
+    except Exception as e:
+        raise RuntimeError(f"{e} (path={path!r}){_hint_for_sqlite_error(e, path)}") from e
+    try:
+        os.chmod(path, 0o600)
     except OSError:
         pass
 
@@ -112,16 +136,22 @@ def save_tenant_id(tenant_id: str) -> None:
     t = (tenant_id or "").strip()
     if not t:
         return
-    _ensure_db()
-    with sqlite3.connect(_path()) as conn:
-        conn.execute(
-            """INSERT INTO xero_oauth (id, tenant_id) VALUES (1, ?)
-               ON CONFLICT(id) DO UPDATE SET tenant_id = excluded.tenant_id""",
-            (t,),
-        )
-        conn.commit()
+    path = _path()
     try:
-        os.chmod(_path(), 0o600)
+        _ensure_db()
+        with sqlite3.connect(path) as conn:
+            conn.execute(
+                """INSERT INTO xero_oauth (id, tenant_id) VALUES (1, ?)
+                   ON CONFLICT(id) DO UPDATE SET tenant_id = excluded.tenant_id""",
+                (t,),
+            )
+            conn.commit()
+    except RuntimeError:
+        raise
+    except Exception as e:
+        raise RuntimeError(f"{e} (path={path!r}){_hint_for_sqlite_error(e, path)}") from e
+    try:
+        os.chmod(path, 0o600)
     except OSError:
         pass
 
