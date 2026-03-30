@@ -22,6 +22,17 @@ def effective_xero_refresh_token(settings: Settings) -> str:
     return (stored or env).strip()
 
 
+def xero_refresh_token_source(settings: Settings) -> str:
+    """Where the active refresh token came from: disk (preferred), env, or none."""
+    stored = get_stored_refresh_token()
+    env = (settings.xero_refresh_token or "").strip()
+    if (stored or "").strip():
+        return "disk"
+    if env:
+        return "env"
+    return "none"
+
+
 def effective_xero_tenant_id(settings: Settings) -> str:
     # Explicit env tenant wins (ops override); else disk; else env still empty
     env = (settings.xero_tenant_id or "").strip()

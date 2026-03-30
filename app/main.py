@@ -20,8 +20,13 @@ from app.hubspot_client import HubSpotClient
 from app.services.invoice_from_deal import create_xero_invoice_from_deal
 from app.services.manual_invoice import create_manual_draft_invoice
 from app.services.sync_deal_xero import process_deals_pending_xero_sync, sync_deal_from_xero
-from app.xero_credentials import effective_xero_refresh_token, effective_xero_tenant_id, make_xero_client
-from app.xero_token_store import is_token_store_enabled, save_after_oauth
+from app.xero_credentials import (
+    effective_xero_refresh_token,
+    effective_xero_tenant_id,
+    make_xero_client,
+    xero_refresh_token_source,
+)
+from app.xero_token_store import get_resolved_sqlite_path, is_token_store_enabled, save_after_oauth
 from app.xero_oauth import DEFAULT_SCOPES, build_authorize_url, exchange_authorization_code, fetch_connections
 
 load_dotenv()
@@ -80,6 +85,8 @@ def api_status():
             "hubspot_configured": False,
             "xero_connected": False,
             "xero_token_store": False,
+            "xero_refresh_token_source": "none",
+            "xero_token_sqlite_path": None,
             "xero_oauth_ready": False,
             "error": str(e),
         }
@@ -90,6 +97,8 @@ def api_status():
             effective_xero_refresh_token(s).strip() and effective_xero_tenant_id(s).strip()
         ),
         "xero_token_store": is_token_store_enabled(),
+        "xero_refresh_token_source": xero_refresh_token_source(s),
+        "xero_token_sqlite_path": get_resolved_sqlite_path() if is_token_store_enabled() else None,
         "xero_oauth_ready": bool(s.xero_client_id.strip() and s.xero_client_secret.strip()),
         "oauth_start_path": "/auth/xero/start",
         "defaults": {

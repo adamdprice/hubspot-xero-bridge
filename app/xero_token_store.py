@@ -34,6 +34,11 @@ def is_token_store_enabled() -> bool:
     return _enabled()
 
 
+def get_resolved_sqlite_path() -> str:
+    """Absolute path used for the token database (for /api/status diagnostics)."""
+    return _path()
+
+
 def _path() -> str:
     p = (os.getenv("XERO_TOKEN_SQLITE_PATH") or "").strip()
     if p:
