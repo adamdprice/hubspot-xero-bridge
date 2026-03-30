@@ -560,12 +560,18 @@ def _process_hubspot_sync_deal_event(body: dict[str, Any], settings: Settings) -
 
 
 @app.post("/api/webhooks/hubspot/sync-deal")
-def post_webhook_sync_deal(body: Any):
+async def post_webhook_sync_deal(request: Request):
     """
     Trigger sync for one deal.
 
     HubSpot CRM webhooks POST a JSON **array** of events; legacy workflows may POST a single object.
+    Parse JSON manually so FastAPI does not return 422 for array bodies (Pydantic defaults to object-only).
     """
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Request body must be valid JSON") from None
+
     try:
         settings = get_settings()
     except Exception as e:
