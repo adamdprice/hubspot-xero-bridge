@@ -5,6 +5,7 @@ https://developer.xero.com/documentation/api/accounting/overview
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import Any, Optional
 
@@ -88,6 +89,10 @@ def xero_invoice_contact_id(inv: dict[str, Any]) -> str:
 class XeroClient:
     TOKEN_URL = "https://identity.xero.com/connect/token"
     API_BASE = "https://api.xero.com/api.xro/2.0"
+    # Per-process gate: each sync path creates a new XeroClient; without this, min_interval would reset every call
+    # and batch sync would hammer Xero (immediate 429). All Accounting API traffic shares this spacing.
+    _accounting_api_gate: threading.Lock = threading.Lock()
+    _accounting_api_last_at: float = 0.0
 
     def __init__(
         self,
@@ -103,7 +108,6 @@ class XeroClient:
         self.refresh_token = (refresh_token or "").strip()
         self.tenant_id = (tenant_id or "").strip()
         self._min_interval_seconds = max(0.0, float(min_interval_seconds))
-        self._last_request_at: float = 0.0
         if not self.refresh_token or not self.tenant_id:
             raise ValueError(
                 "Xero is not connected yet. Complete OAuth in the browser — open GET /auth/xero/start "
@@ -155,12 +159,12 @@ class XeroClient:
         """Space out Accounting API calls to stay under Xero per-minute limits (reduces 429)."""
         if self._min_interval_seconds <= 0:
             return
-        now = time.time()
-        if self._last_request_at > 0:
-            wait = self._last_request_at + self._min_interval_seconds - now
+        with self._accounting_api_gate:
+            now = time.time()
+            wait = self._accounting_api_last_at + self._min_interval_seconds - now
             if wait > 0:
                 time.sleep(wait)
-        self._last_request_at = time.time()
+            self._accounting_api_last_at = time.time()
 
     def _request(
         self,

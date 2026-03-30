@@ -81,8 +81,8 @@ class Settings(BaseSettings):
     xero_item_code: str = "Day Rate (VAT)"
     # Tax type for VAT on sales — org-specific. UK standard rate sales often OUTPUT2; verify in Xero Settings → Tax rates
     xero_line_tax_type: str = "OUTPUT2"
-    # Minimum delay between Xero Accounting API calls (per process). Cuts 429s when syncing many deals. Try 1.0 if still rate-limited.
-    xero_api_min_interval_seconds: float = 0.5
+    # Minimum delay between Xero Accounting API calls (process-wide; shared across all XeroClient instances). Try 1.5–2.0 if 429 persists.
+    xero_api_min_interval_seconds: float = 1.0
 
     @model_validator(mode="after")
     def _warn_if_webhook_secret_looks_like_access_token(self):
