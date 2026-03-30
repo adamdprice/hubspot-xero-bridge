@@ -49,6 +49,20 @@ def _hs_bool_true(val: Any) -> bool:
     return s in ("true", "1", "yes")
 
 
+def _xero_invoice_number_ignore_tokens(settings: Settings) -> list[str]:
+    raw = (settings.hubspot_xero_invoice_number_sync_ignore_values or "").strip()
+    return [x.strip().lower() for x in raw.split(",") if x.strip()]
+
+
+def _xero_invoice_number_is_ignored(inv_num_hs: str, settings: Settings) -> bool:
+    """True when the deal's invoice number field matches an ignored token (e.g. placeholder OLD)."""
+    s = (inv_num_hs or "").strip()
+    if not s:
+        return False
+    low = s.lower()
+    return low in _xero_invoice_number_ignore_tokens(settings)
+
+
 def _sync_requested(props: dict[str, Any], settings: Settings) -> bool:
     """True if the deal asks for a Xero pull (boolean and/or dropdown trigger)."""
     sw = (settings.hubspot_deal_prop_sync_with_xero or "").strip()
@@ -97,6 +111,9 @@ def sync_deal_from_xero(
 
     inv_id = (props.get(settings.hubspot_deal_prop_xero_invoice_id) or "").strip()
     inv_num_hs = (props.get(settings.hubspot_deal_prop_xero_invoice_number) or "").strip()
+
+    if inv_num_hs and _xero_invoice_number_is_ignored(inv_num_hs, settings):
+        return SyncDealXeroResult(ok=True, deal_id=deal_id, skipped=True)
 
     try:
         xero = make_xero_client(settings)
@@ -236,8 +253,13 @@ def process_deals_with_xero_invoice_number_sync(
             if len(deal_ids) >= max_deals:
                 break
             did = str(row.get("id") or "").strip()
-            if did:
-                deal_ids.append(did)
+            if not did:
+                continue
+            raw_num = (row.get("properties") or {}).get(prop) if prop else None
+            inv_raw = (raw_num or "").strip() if raw_num is not None else ""
+            if inv_raw and _xero_invoice_number_is_ignored(inv_raw, settings):
+                continue
+            deal_ids.append(did)
         if not next_after or not batch:
             break
         after = next_after

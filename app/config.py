@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     hubspot_xero_invoice_number_sync_max_deals: int = 500
     # Temporarily stop invoice-number batch sync (timer + POST /api/cron/sync-xero-by-invoice-number). Webhook trigger sync unchanged.
     hubspot_xero_invoice_number_sync_disabled: bool = False
+    # Comma-separated values (case-insensitive exact match). Deals with this Xero invoice number are never synced from Xero.
+    hubspot_xero_invoice_number_sync_ignore_values: str = "OLD"
 
     # OAuth app credentials (always required for Xero API after you connect)
     xero_client_id: str = ""
