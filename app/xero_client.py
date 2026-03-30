@@ -4,10 +4,13 @@ https://developer.xero.com/documentation/api/accounting/overview
 """
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any, Optional
 
 import httpx
+
+_log = logging.getLogger(__name__)
 
 
 def invoice_fields_for_hubspot(inv: dict[str, Any]) -> tuple[str, str]:
@@ -68,8 +71,8 @@ class XeroClient:
                 from app.xero_token_store import save_refresh_token
 
                 save_refresh_token(self.refresh_token)
-            except Exception:
-                pass
+            except Exception as e:
+                _log.warning("Could not persist rotated Xero refresh token: %s", e)
         return self._access_token
 
     def _headers(self) -> dict[str, str]:

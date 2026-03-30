@@ -199,19 +199,34 @@ def auth_xero_callback(
     tenant_to_save = None
     if first_tid and not (s.xero_tenant_id or "").strip():
         tenant_to_save = first_tid
+
+    oauth_save_ok = False
+    oauth_save_error = ""
     try:
         save_after_oauth(refresh_token=refresh, tenant_id=tenant_to_save)
-    except Exception:
-        pass
+        oauth_save_ok = True
+    except Exception as e:
+        oauth_save_error = str(e)
 
+    db_path = html.escape(os.getenv("XERO_TOKEN_SQLITE_PATH") or "/tmp/hubspot_xero_tokens.db")
     saved_note = ""
     if is_token_store_enabled():
-        saved_note = (
-            "<p style='background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px;padding:1rem'>"
-            "<strong>Production:</strong> This refresh token was saved on the server disk "
-            f"(<code>{html.escape(os.getenv('XERO_TOKEN_SQLITE_PATH') or '/tmp/hubspot_xero_tokens.db')}</code>). "
-            "You do not need to paste it into Railway variables unless you prefer env-only mode.</p>"
-        )
+        if oauth_save_ok:
+            saved_note = (
+                "<p style='background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px;padding:1rem'>"
+                "<strong>Token saved on disk</strong> at "
+                f"<code>{db_path}</code>. "
+                "The app will keep using this file when Xero rotates the refresh token — "
+                "you do not need to update Railway env vars each time.</p>"
+            )
+        else:
+            saved_note = (
+                "<p style='background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:1rem'>"
+                "<strong>Could not save the token to disk.</strong> The refresh token below still works until the next deploy, "
+                "but you should fix this or paste it into Railway as <code>XERO_REFRESH_TOKEN</code>.<br/><br/>"
+                f"<strong>Error:</strong> <code>{html.escape(oauth_save_error)}</code><br/><br/>"
+                f"Check volume mount, path <code>{db_path}</code>, and filesystem permissions.</p>"
+            )
 
     return HTMLResponse(
         f"""<!DOCTYPE html>
