@@ -23,12 +23,15 @@ from app.xero_client import invoice_fields_for_hubspot, xero_invoice_contact_id
 def _clear_xero_sync_trigger_value(settings: Settings) -> Optional[str]:
     """
     After sync: clear the xero_sync_trigger dropdown.
-    If HUBSPOT_DEAL_XERO_SYNC_TRIGGER_CLEAR_VALUE is set, use that option's value; otherwise None → API null clears the field.
+    If HUBSPOT_DEAL_XERO_SYNC_TRIGGER_CLEAR_VALUE is set, use that option's internal value.
+    Otherwise: empty string (default) or JSON null if hubspot_deal_xero_sync_trigger_clear_send_null is True.
     """
     raw = (settings.hubspot_deal_xero_sync_trigger_clear_value or "").strip()
     if raw:
         return raw
-    return None
+    if settings.hubspot_deal_xero_sync_trigger_clear_send_null:
+        return None
+    return ""
 
 
 def _utc_now_iso() -> str:

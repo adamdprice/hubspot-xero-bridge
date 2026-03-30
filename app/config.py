@@ -30,9 +30,11 @@ class Settings(BaseSettings):
     # Dropdown alternative (e.g. single option "Sync") for workflow triggers that cannot use booleans
     hubspot_deal_prop_xero_sync_trigger: str = "xero_sync_trigger"
     hubspot_deal_xero_sync_trigger_value: str = "Sync"
-    # After sync, clear the trigger: leave unset so the API sends null (best for dropdowns). If HubSpot rejects null,
-    # add a second option (e.g. "—") and set this to that option's internal value.
+    # Must match the option value HubSpot stores (check webhook payload propertyValue — not always the label text).
+    # After sync, clear the trigger. If set, PATCH that exact option value (e.g. second menu option "—").
     hubspot_deal_xero_sync_trigger_clear_value: str = ""
+    # If clear_value is unset: False = send "" to clear dropdown; True = send JSON null. Some portals only accept one.
+    hubspot_deal_xero_sync_trigger_clear_send_null: bool = False
     hubspot_deal_prop_last_xero_sync: str = "last_xero_sync"
     hubspot_deal_prop_xero_sync_last_error_date: str = "xero_sync_last_error_date"
 

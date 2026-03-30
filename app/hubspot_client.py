@@ -110,7 +110,7 @@ class HubSpotClient:
             raise
 
     def patch_deal(self, deal_id: str, properties: dict[str, Any]) -> dict:
-        # None → JSON null (needed to clear HubSpot select/dropdown fields; "" often leaves the value set).
+        # None → JSON null. "" → empty string (many select fields clear with this; see sync trigger clear settings).
         body_props: dict[str, Any] = {}
         for k, v in properties.items():
             if v is None:

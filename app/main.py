@@ -529,6 +529,18 @@ def _hubspot_subscription_type(body: dict[str, Any]) -> str:
     return (body.get("subscriptionType") or body.get("eventType") or "").strip()
 
 
+def _hubspot_webhook_property_value(body: dict[str, Any]) -> str:
+    """CRM deal.propertyChange value; normalize for comparison with HUBSPOT_DEAL_XERO_SYNC_TRIGGER_VALUE."""
+    raw = body.get("propertyValue")
+    if raw is None:
+        v = ""
+    else:
+        v = str(raw).strip()
+    if v.lower() in ("", "null", "none"):
+        return ""
+    return v
+
+
 def _peek_subscription_types_from_body(body: Any) -> list[str]:
     if isinstance(body, list):
         return [_hubspot_subscription_type(x) for x in body if isinstance(x, dict)]
@@ -539,23 +551,24 @@ def _peek_subscription_types_from_body(body: Any) -> list[str]:
 
 def _hubspot_webhook_skip(body: dict[str, Any], settings: Settings) -> tuple[bool, str]:
     """
-    Skip noisy CRM webhooks (wrong property, cleared dropdown).
-    Plain workflow JSON without subscriptionType is never skipped here.
+    Skip CRM noise. For xero_sync_trigger: only run sync when propertyValue matches the configured sync option
+    (e.g. Sync). Clears and any other value are skipped so clearing the dropdown does not re-run sync.
     """
     sub = _hubspot_subscription_type(body)
-    if sub != "deal.propertyChange":
-        return False, ""
     want_prop = (settings.hubspot_deal_prop_xero_sync_trigger or "").strip()
+    want_val = (settings.hubspot_deal_xero_sync_trigger_value or "").strip()
     pn = (body.get("propertyName") or "").strip()
-    if want_prop and pn and pn != want_prop:
-        return True, "ignored_property"
+    pv = _hubspot_webhook_property_value(body)
+
     if want_prop and pn == want_prop:
-        pv = (body.get("propertyValue") or "").strip()
-        want_val = (settings.hubspot_deal_xero_sync_trigger_value or "").strip()
-        if want_val and not pv:
-            return True, "cleared_trigger"
-        if want_val and pv and pv.lower() != want_val.lower():
-            return True, "not_sync_selection"
+        if not want_val:
+            return False, ""
+        if pv.lower() != want_val.lower():
+            return True, "trigger_not_sync"
+        return False, ""
+
+    if sub == "deal.propertyChange" and want_prop and pn and pn != want_prop:
+        return True, "ignored_property"
     return False, ""
 
 
@@ -570,7 +583,7 @@ def _hubspot_webhook_payload_confirms_sync_trigger(body: dict[str, Any], setting
     pn = (body.get("propertyName") or "").strip()
     if not want_prop or not pn or pn != want_prop:
         return False
-    pv = (body.get("propertyValue") or "").strip()
+    pv = _hubspot_webhook_property_value(body)
     want_val = (settings.hubspot_deal_xero_sync_trigger_value or "").strip()
     if not want_val:
         return False
