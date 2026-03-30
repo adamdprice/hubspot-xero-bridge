@@ -304,6 +304,62 @@ class HubSpotClient:
         data = self._request("POST", "/crm/v3/objects/deals/search", json_body=body)
         return data.get("results") or []
 
+    def search_deals_xero_invoice_sync_filtered(
+        self,
+        invoice_number_prop: str,
+        *,
+        status_prop: str,
+        exclude_status_paid: bool,
+        invoice_number_not_contains_tokens: list[str],
+        extra_properties: Optional[list[str]] = None,
+        limit: int = 100,
+        after: Optional[str] = None,
+    ) -> tuple[list[dict], Optional[str]]:
+        """
+        Deals that match a typical CRM list view: invoice number is set, status is not Paid,
+        and invoice number does not contain configured tokens (e.g. OLD) — same idea as HubSpot UI filters.
+        All filters in one group are ANDed.
+        """
+        pn = (invoice_number_prop or "").strip()
+        if not pn:
+            return [], None
+        sp = (status_prop or "").strip()
+        props = [
+            "dealname",
+            "amount",
+            "hs_object_id",
+        ]
+        if extra_properties:
+            props = list(dict.fromkeys(props + extra_properties))
+        filters: list[dict[str, Any]] = [
+            {"propertyName": pn, "operator": "HAS_PROPERTY"},
+        ]
+        if exclude_status_paid and sp:
+            filters.append({"propertyName": sp, "operator": "NEQ", "value": "Paid"})
+        for raw in invoice_number_not_contains_tokens:
+            tok = (raw or "").strip()
+            if not tok:
+                continue
+            filters.append(
+                {
+                    "propertyName": pn,
+                    "operator": "NOT_CONTAINS_TOKEN",
+                    "value": tok,
+                }
+            )
+        body: dict[str, Any] = {
+            "filterGroups": [{"filters": filters}],
+            "properties": props,
+            "limit": min(max(limit, 1), 100),
+        }
+        if after:
+            body["after"] = after
+        data = self._request("POST", "/crm/v3/objects/deals/search", json_body=body)
+        results = data.get("results") or []
+        paging = data.get("paging") or {}
+        next_after = paging.get("next", {}).get("after")
+        return results, str(next_after) if next_after else None
+
     def search_deals_has_property(
         self,
         property_name: str,

@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     hubspot_xero_invoice_number_sync_ignore_values: str = "OLD"
     # Batch/timer invoice sync: skip deals whose HubSpot xero_invoice_status is already Paid (fewer Xero API calls).
     hubspot_xero_skip_sync_when_status_paid: bool = True
+    # Use HubSpot search filters (HAS_PROPERTY + NEQ Paid + NOT_CONTAINS_TOKEN for ignore list) so batch matches CRM list views.
+    # If false, legacy HAS_PROPERTY-only search + in-memory filters (can sync more deals than a filtered list).
+    hubspot_xero_invoice_number_sync_use_hubspot_filters: bool = True
+    # If true, also include deals with xero_invoice_id set but no invoice number (not in "invoice number known" views).
+    # Default false so batch sync matches typical "Xero invoice number is known" CRM filters and avoids extra Xero calls.
+    hubspot_xero_invoice_sync_include_id_without_number: bool = False
 
     # OAuth app credentials (always required for Xero API after you connect)
     xero_client_id: str = ""

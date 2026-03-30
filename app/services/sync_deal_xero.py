@@ -54,6 +54,12 @@ def _xero_invoice_number_ignore_tokens(settings: Settings) -> list[str]:
     return [x.strip().lower() for x in raw.split(",") if x.strip()]
 
 
+def _xero_invoice_number_ignore_tokens_hubspot_api(settings: Settings) -> list[str]:
+    """Tokens for HubSpot NOT_CONTAINS_TOKEN (case-sensitive per API; use same casing as stored values)."""
+    raw = (settings.hubspot_xero_invoice_number_sync_ignore_values or "").strip()
+    return [x.strip() for x in raw.split(",") if x.strip()]
+
+
 def _xero_invoice_number_is_ignored(inv_num_hs: str, settings: Settings) -> bool:
     """True when the deal's invoice number field matches an ignored token (e.g. placeholder OLD)."""
     s = (inv_num_hs or "").strip()
@@ -269,9 +275,12 @@ def process_deals_with_xero_invoice_number_sync(
     max_deals: int = 150,
 ) -> dict[str, Any]:
     """
-    Find deals with xero_invoice_number and/or xero_invoice_id set (HubSpot HAS_PROPERTY) and pull from Xero.
+    Find deals with xero_invoice_number and/or xero_invoice_id set and pull from Xero.
     Does not require xero_sync_trigger or sync_with_xero — for scheduled / cron sync.
-    When hubspot_xero_skip_sync_when_status_paid is true, deals whose xero_invoice_status is already Paid are omitted.
+
+    When hubspot_xero_invoice_number_sync_use_hubspot_filters is true (default), the deal query matches a typical
+    CRM view: invoice number known, status not Paid, invoice number does not contain ignore tokens (e.g. OLD).
+    Set hubspot_xero_invoice_sync_include_id_without_number=false to exclude ID-only deals (invoice number empty).
     """
     if settings.hubspot_xero_invoice_number_sync_disabled:
         return {
@@ -295,6 +304,9 @@ def process_deals_with_xero_invoice_number_sync(
     deal_ids: list[str] = []
 
     skip_paid = bool(settings.hubspot_xero_skip_sync_when_status_paid)
+    use_hs_filters = bool(settings.hubspot_xero_invoice_number_sync_use_hubspot_filters)
+    include_id_only = bool(settings.hubspot_xero_invoice_sync_include_id_without_number)
+    search_mode = "legacy"
 
     def _append_row(row: dict[str, Any]) -> None:
         did = str(row.get("id") or "").strip()
@@ -328,9 +340,39 @@ def process_deals_with_xero_invoice_number_sync(
                 break
             after = next_after
 
+    def _paginate_filtered_by_invoice_number() -> None:
+        nonlocal search_mode
+        if not prop or len(deal_ids) >= max_deals:
+            return
+        after: Optional[str] = None
+        tokens = _xero_invoice_number_ignore_tokens_hubspot_api(settings)
+        while len(deal_ids) < max_deals:
+            page_limit = min(100, max_deals - len(deal_ids))
+            batch, next_after = hs.search_deals_xero_invoice_sync_filtered(
+                prop,
+                status_prop=settings.hubspot_deal_prop_xero_invoice_status,
+                exclude_status_paid=skip_paid,
+                invoice_number_not_contains_tokens=tokens,
+                extra_properties=extra,
+                limit=page_limit,
+                after=after,
+            )
+            for row in batch:
+                if len(deal_ids) >= max_deals:
+                    break
+                _append_row(row)
+            if not next_after or not batch:
+                break
+            after = next_after
+        search_mode = "hubspot_filters"
+
     if prop:
-        _paginate_has_property(prop)
-    if id_prop:
+        if use_hs_filters:
+            _paginate_filtered_by_invoice_number()
+        else:
+            _paginate_has_property(prop)
+            search_mode = "legacy"
+    if id_prop and include_id_only:
         _paginate_has_property(id_prop)
 
     results: list[dict[str, Any]] = []
@@ -349,4 +391,5 @@ def process_deals_with_xero_invoice_number_sync(
                 "error": r.error,
             }
         )
-    return {"queued": len(deal_ids), "results": results}
+    out: dict[str, Any] = {"queued": len(deal_ids), "results": results, "search_mode": search_mode}
+    return out

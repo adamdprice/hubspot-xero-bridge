@@ -76,6 +76,7 @@ async def _xero_invoice_number_sync_background_loop(interval_sec: int) -> None:
                     {
                         "xero_invoice_number_sync_timer": True,
                         "queued": out.get("queued"),
+                        "search_mode": out.get("search_mode"),
                         "ok_count": ok_n,
                         "error": out.get("error"),
                     },
@@ -182,6 +183,8 @@ def api_status():
             "xero_invoice_number_sync_ignore_values": None,
             "xero_api_min_interval_seconds": None,
             "hubspot_xero_skip_sync_when_status_paid": None,
+            "hubspot_xero_invoice_number_sync_use_hubspot_filters": None,
+            "hubspot_xero_invoice_sync_include_id_without_number": None,
             "error": str(e),
         }
     return {
@@ -201,6 +204,8 @@ def api_status():
         "xero_invoice_number_sync_ignore_values": s.hubspot_xero_invoice_number_sync_ignore_values,
         "xero_api_min_interval_seconds": s.xero_api_min_interval_seconds,
         "hubspot_xero_skip_sync_when_status_paid": s.hubspot_xero_skip_sync_when_status_paid,
+        "hubspot_xero_invoice_number_sync_use_hubspot_filters": s.hubspot_xero_invoice_number_sync_use_hubspot_filters,
+        "hubspot_xero_invoice_sync_include_id_without_number": s.hubspot_xero_invoice_sync_include_id_without_number,
         "defaults": {
             "sales_account": s.xero_sales_account_code,
             "item_code": s.xero_item_code,
