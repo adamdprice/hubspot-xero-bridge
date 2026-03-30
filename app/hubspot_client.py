@@ -110,11 +110,17 @@ class HubSpotClient:
             raise
 
     def patch_deal(self, deal_id: str, properties: dict[str, Any]) -> dict:
-        str_props = {k: hubspot_property_value_string(v) for k, v in properties.items()}
+        # None → JSON null (needed to clear HubSpot select/dropdown fields; "" often leaves the value set).
+        body_props: dict[str, Any] = {}
+        for k, v in properties.items():
+            if v is None:
+                body_props[k] = None
+            else:
+                body_props[k] = hubspot_property_value_string(v)
         return self._request(
             "PATCH",
             f"/crm/v3/objects/deals/{deal_id}",
-            json_body={"properties": str_props},
+            json_body={"properties": body_props},
         )
 
     def get_deal_associated_contact_ids(self, deal_id: str) -> list[str]:
