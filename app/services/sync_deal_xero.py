@@ -194,6 +194,13 @@ def sync_deal_from_xero(
 
 def process_deals_pending_xero_sync(settings: Settings, *, max_deals: int = 50) -> dict[str, Any]:
     """Find deals with sync_with_xero=true (if that property exists) and/or xero_sync_trigger=Sync; run each (cron)."""
+    if settings.hubspot_xero_pending_sync_cron_disabled:
+        return {
+            "queued": 0,
+            "results": [],
+            "disabled": True,
+            "reason": "hubspot_xero_pending_sync_cron_disabled",
+        }
     hs = HubSpotClient(settings.hubspot_access_token)
     extra = deal_xero_sync_read_property_names(settings)
     seen: dict[str, dict[str, Any]] = {}
