@@ -1,7 +1,10 @@
+import logging
 from typing import Any
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_log = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -9,7 +12,7 @@ class Settings(BaseSettings):
 
     # Empty is allowed at boot (e.g. Railway env not yet set); APIs check before calling HubSpot.
     hubspot_access_token: str = ""
-    # Private/public app "Client secret" — validates X-HubSpot-Signature on webhooks (no custom headers).
+    # Private/public app "Client secret" (Auth tab) — NOT the access token; validates X-HubSpot-Signature on webhooks.
     hubspot_client_secret: str = ""
 
     # Set false until you create the custom deal properties in HubSpot (see .env.example)
@@ -69,6 +72,16 @@ class Settings(BaseSettings):
             if s in ("1", "true", "yes", "on"):
                 return True
         return bool(v)
+
+    @model_validator(mode="after")
+    def _warn_if_webhook_secret_looks_like_access_token(self):
+        s = (self.hubspot_client_secret or "").strip()
+        if s.lower().startswith("pat-"):
+            _log.warning(
+                "HUBSPOT_CLIENT_SECRET looks like a Private App access token (pat-...). "
+                "Webhook signatures need the separate Client secret on the same app's Auth tab — not the access token."
+            )
+        return self
 
 
 def get_settings() -> Settings:
