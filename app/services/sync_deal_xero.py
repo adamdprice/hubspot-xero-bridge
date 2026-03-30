@@ -238,7 +238,7 @@ def _deal_row_skip_for_invoice_batch_sync(
 def process_deals_with_xero_invoice_number_sync(
     settings: Settings,
     *,
-    max_deals: int = 500,
+    max_deals: int = 150,
 ) -> dict[str, Any]:
     """
     Find deals with xero_invoice_number and/or xero_invoice_id set (HubSpot HAS_PROPERTY) and pull from Xero.

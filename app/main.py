@@ -59,7 +59,7 @@ async def _xero_invoice_number_sync_background_loop(interval_sec: int) -> None:
             if settings.hubspot_xero_invoice_number_sync_disabled:
                 await asyncio.sleep(interval_sec)
                 continue
-            max_d = max(1, int(settings.hubspot_xero_invoice_number_sync_max_deals or 500))
+            max_d = max(1, int(settings.hubspot_xero_invoice_number_sync_max_deals or 150))
             out = await asyncio.to_thread(
                 process_deals_with_xero_invoice_number_sync,
                 settings,
@@ -180,6 +180,7 @@ def api_status():
             "xero_invoice_number_sync_max_deals": None,
             "xero_invoice_number_sync_disabled": None,
             "xero_invoice_number_sync_ignore_values": None,
+            "xero_api_min_interval_seconds": None,
             "error": str(e),
         }
     return {
@@ -197,6 +198,7 @@ def api_status():
         "xero_invoice_number_sync_max_deals": s.hubspot_xero_invoice_number_sync_max_deals,
         "xero_invoice_number_sync_disabled": s.hubspot_xero_invoice_number_sync_disabled,
         "xero_invoice_number_sync_ignore_values": s.hubspot_xero_invoice_number_sync_ignore_values,
+        "xero_api_min_interval_seconds": s.xero_api_min_interval_seconds,
         "defaults": {
             "sales_account": s.xero_sales_account_code,
             "item_code": s.xero_item_code,
@@ -597,7 +599,7 @@ def post_cron_sync_xero(max_deals: int = Query(50, ge=1, le=100)):
 
 
 @app.post("/api/cron/sync-xero-by-invoice-number")
-def post_cron_sync_xero_by_invoice_number(max_deals: int = Query(500, ge=1, le=2000)):
+def post_cron_sync_xero_by_invoice_number(max_deals: int = Query(150, ge=1, le=2000)):
     """
     Sync all deals where the Xero invoice number field is populated (same as the in-app timer).
     Does not require xero_sync_trigger. Uses same auth as other cron routes when BRIDGE_AUTH_TOKEN is set.

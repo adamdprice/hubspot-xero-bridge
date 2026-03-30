@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     # Set to 0 to disable the background loop (e.g. use Railway cron on /api/cron/sync-xero-by-invoice-number only).
     # Use a single uvicorn worker if you enable this, or each worker would run its own loop.
     hubspot_xero_invoice_number_sync_interval_seconds: int = 600
-    hubspot_xero_invoice_number_sync_max_deals: int = 500
+    hubspot_xero_invoice_number_sync_max_deals: int = 150
     # Temporarily stop invoice-number batch sync (timer + POST /api/cron/sync-xero-by-invoice-number). Webhook trigger sync unchanged.
     hubspot_xero_invoice_number_sync_disabled: bool = False
     # Comma-separated values (case-insensitive exact match). Deals with this Xero invoice number are never synced from Xero.
@@ -73,6 +73,8 @@ class Settings(BaseSettings):
     xero_item_code: str = "Day Rate (VAT)"
     # Tax type for VAT on sales — org-specific. UK standard rate sales often OUTPUT2; verify in Xero Settings → Tax rates
     xero_line_tax_type: str = "OUTPUT2"
+    # Minimum delay between Xero Accounting API calls (per process). Cuts 429s when syncing many deals. Try 1.0 if still rate-limited.
+    xero_api_min_interval_seconds: float = 0.5
 
     @model_validator(mode="after")
     def _warn_if_webhook_secret_looks_like_access_token(self):

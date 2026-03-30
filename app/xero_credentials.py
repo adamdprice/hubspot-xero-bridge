@@ -13,6 +13,7 @@ def make_xero_client(settings: Settings):
         settings.xero_client_secret,
         effective_xero_refresh_token(settings),
         effective_xero_tenant_id(settings),
+        min_interval_seconds=settings.xero_api_min_interval_seconds,
     )
 
 

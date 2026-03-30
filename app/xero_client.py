@@ -95,11 +95,15 @@ class XeroClient:
         client_secret: str,
         refresh_token: str,
         tenant_id: str,
+        *,
+        min_interval_seconds: float = 0.0,
     ):
         self.client_id = client_id
         self.client_secret = client_secret
         self.refresh_token = (refresh_token or "").strip()
         self.tenant_id = (tenant_id or "").strip()
+        self._min_interval_seconds = max(0.0, float(min_interval_seconds))
+        self._last_request_at: float = 0.0
         if not self.refresh_token or not self.tenant_id:
             raise ValueError(
                 "Xero is not connected yet. Complete OAuth in the browser — open GET /auth/xero/start "
@@ -147,6 +151,17 @@ class XeroClient:
             "Content-Type": "application/json",
         }
 
+    def _throttle(self) -> None:
+        """Space out Accounting API calls to stay under Xero per-minute limits (reduces 429)."""
+        if self._min_interval_seconds <= 0:
+            return
+        now = time.time()
+        if self._last_request_at > 0:
+            wait = self._last_request_at + self._min_interval_seconds - now
+            if wait > 0:
+                time.sleep(wait)
+        self._last_request_at = time.time()
+
     def _request(
         self,
         method: str,
@@ -162,6 +177,7 @@ class XeroClient:
         """
         last: Optional[httpx.Response] = None
         for attempt in range(max_attempts):
+            self._throttle()
             with httpx.Client(timeout=timeout) as client:
                 r = client.request(
                     method,
