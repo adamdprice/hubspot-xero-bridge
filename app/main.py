@@ -508,12 +508,17 @@ def _hubspot_webhook_deal_id(body: dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _hubspot_subscription_type(body: dict[str, Any]) -> str:
+    """HubSpot payloads use subscriptionType; some examples use eventType."""
+    return (body.get("subscriptionType") or body.get("eventType") or "").strip()
+
+
 def _hubspot_webhook_skip(body: dict[str, Any], settings: Settings) -> tuple[bool, str]:
     """
     Skip noisy CRM webhooks (wrong property, cleared dropdown).
     Plain workflow JSON without subscriptionType is never skipped here.
     """
-    sub = (body.get("subscriptionType") or "").strip()
+    sub = _hubspot_subscription_type(body)
     if sub != "deal.propertyChange":
         return False, ""
     want_prop = (settings.hubspot_deal_prop_xero_sync_trigger or "").strip()
@@ -530,34 +535,58 @@ def _hubspot_webhook_skip(body: dict[str, Any], settings: Settings) -> tuple[boo
     return False, ""
 
 
-@app.post("/api/webhooks/hubspot/sync-deal")
-def post_webhook_sync_deal(body: dict[str, Any]):
-    """
-    Trigger sync for one deal.
-
-    HubSpot CRM webhooks (deal.propertyChange) send objectId, propertyName, propertyValue, etc.
-    Legacy / workflow: {"dealId": "123"} or {"objectId": 123}.
-    """
+def _process_hubspot_sync_deal_event(body: dict[str, Any], settings: Settings) -> dict[str, Any]:
+    """Handle one webhook object (HubSpot sends a JSON array of events per POST)."""
     deal_id = _hubspot_webhook_deal_id(body)
     if not deal_id:
-        raise HTTPException(status_code=400, detail="Provide objectId, dealId, or deal_id")
-
-    try:
-        settings = get_settings()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        return {"ok": False, "error": "missing objectId, dealId, or deal_id"}
 
     skip, reason = _hubspot_webhook_skip(body, settings)
     if skip:
         return {"deal_id": deal_id, "ok": True, "skipped": True, "reason": reason}
 
-    # Native HubSpot payload: only sync when deal still shows a sync request (avoids loops on clear).
-    is_hubspot_crm = bool((body.get("subscriptionType") or "").strip())
+    is_hubspot_crm = bool(_hubspot_subscription_type(body))
     require_flag = is_hubspot_crm
 
     result = sync_deal_from_xero(settings, deal_id, require_sync_flag=require_flag)
     if result.skipped:
         return {"deal_id": deal_id, "ok": True, "skipped": True, "reason": "no_sync_pending_on_deal"}
     if not result.ok:
-        raise HTTPException(status_code=400, detail=result.error or "Sync failed")
+        return {"deal_id": deal_id, "ok": False, "error": result.error or "Sync failed"}
     return {"deal_id": result.deal_id, "ok": True}
+
+
+@app.post("/api/webhooks/hubspot/sync-deal")
+def post_webhook_sync_deal(body: Any):
+    """
+    Trigger sync for one deal.
+
+    HubSpot CRM webhooks POST a JSON **array** of events; legacy workflows may POST a single object.
+    """
+    try:
+        settings = get_settings()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+    if isinstance(body, list):
+        if not body:
+            return {"ok": True, "skipped": True, "reason": "empty_batch"}
+        results: list[dict[str, Any]] = []
+        for item in body:
+            if not isinstance(item, dict):
+                results.append({"ok": False, "error": "expected_object_in_batch"})
+                continue
+            results.append(_process_hubspot_sync_deal_event(item, settings))
+        any_err = any(not r.get("ok") for r in results)
+        if any_err:
+            # 200 avoids HubSpot retry storms; include per-event errors
+            return {"ok": False, "batch": True, "results": results}
+        return {"ok": True, "batch": True, "results": results}
+
+    if isinstance(body, dict):
+        out = _process_hubspot_sync_deal_event(body, settings)
+        if not out.get("ok") and "error" in out:
+            raise HTTPException(status_code=400, detail=out.get("error", "Sync failed"))
+        return out
+
+    raise HTTPException(status_code=400, detail="Expected JSON object or array")

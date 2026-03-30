@@ -19,6 +19,9 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from app.config import get_settings
+from app.hubspot_webhook_verify import verify_hubspot_webhook_signature
+
+HUBSPOT_SYNC_WEBHOOK_PATH = "/api/webhooks/hubspot/sync-deal"
 
 
 def session_secret_key() -> str:
@@ -54,13 +57,48 @@ class BridgeAuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         try:
-            token = (get_settings().bridge_auth_token or "").strip()
+            settings = get_settings()
+            token = (settings.bridge_auth_token or "").strip()
+            hubspot_secret = (settings.hubspot_client_secret or "").strip()
         except Exception:
             token = (os.getenv("BRIDGE_AUTH_TOKEN") or "").strip()
-        if not token:
-            return await call_next(request)
+            hubspot_secret = (os.getenv("HUBSPOT_CLIENT_SECRET") or "").strip()
 
         path = request.url.path
+
+        # HubSpot webhooks cannot send Authorization; they send X-HubSpot-Signature (client secret + body).
+        if path == HUBSPOT_SYNC_WEBHOOK_PATH and request.method == "POST" and (token or hubspot_secret):
+            body = await request.body()
+
+            def _replay_receive(b: bytes):
+                async def receive():
+                    return {"type": "http.request", "body": b, "more_body": False}
+
+                return receive
+
+            hs_ok = bool(hubspot_secret and verify_hubspot_webhook_signature(request, body, hubspot_secret))
+            bearer_ok = False
+            if token:
+                auth_h = request.headers.get("authorization") or ""
+                if auth_h.lower().startswith("bearer "):
+                    got = auth_h[7:].strip()
+                    bearer_ok = secrets.compare_digest(got, token)
+
+            if hs_ok or bearer_ok:
+                return await call_next(Request(request.scope, _replay_receive(body)))
+
+            return JSONResponse(
+                {
+                    "detail": (
+                        "Unauthorized. For HubSpot webhooks set HUBSPOT_CLIENT_SECRET to your app client secret "
+                        "(validates X-HubSpot-Signature). Or send Authorization: Bearer with BRIDGE_AUTH_TOKEN."
+                    )
+                },
+                status_code=401,
+            )
+
+        if not token:
+            return await call_next(request)
 
         if path == "/health":
             return await call_next(request)

@@ -9,6 +9,8 @@ class Settings(BaseSettings):
 
     # Empty is allowed at boot (e.g. Railway env not yet set); APIs check before calling HubSpot.
     hubspot_access_token: str = ""
+    # Private/public app "Client secret" — validates X-HubSpot-Signature on webhooks (no custom headers).
+    hubspot_client_secret: str = ""
 
     # Set false until you create the custom deal properties in HubSpot (see .env.example)
     hubspot_deal_sync_enabled: bool = True
