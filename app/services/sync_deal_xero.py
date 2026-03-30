@@ -115,8 +115,8 @@ def sync_deal_from_xero(
     inv_id = (props.get(settings.hubspot_deal_prop_xero_invoice_id) or "").strip()
     inv_num_hs = (props.get(settings.hubspot_deal_prop_xero_invoice_number) or "").strip()
 
-    # Ignore placeholder numbers (e.g. OLD) only when we cannot resolve the invoice by Xero ID.
-    if inv_num_hs and _xero_invoice_number_is_ignored(inv_num_hs, settings) and not inv_id:
+    # Ignored tokens (e.g. OLD) always skip — even if xero_invoice_id is set.
+    if inv_num_hs and _xero_invoice_number_is_ignored(inv_num_hs, settings):
         return SyncDealXeroResult(ok=True, deal_id=deal_id, skipped=True)
 
     try:
@@ -127,13 +127,9 @@ def sync_deal_from_xero(
 
     try:
         inv: Optional[dict[str, Any]] = None
-        # Prefer invoice number when present, unless it's an ignored placeholder (e.g. OLD) and we have a UUID.
+        # Prefer invoice number when present (stale/wrong UUID would otherwise 404 and skip the number path).
         if inv_num_hs:
-            use_number_lookup = (
-                not inv_id or not _xero_invoice_number_is_ignored(inv_num_hs, settings)
-            )
-            if use_number_lookup:
-                inv = xero.get_invoice_by_number(inv_num_hs)
+            inv = xero.get_invoice_by_number(inv_num_hs)
         if inv is None and inv_id:
             try:
                 inv = xero.get_invoice(inv_id)
@@ -147,7 +143,7 @@ def sync_deal_from_xero(
         if not inv:
             msg = (
                 "No Xero invoice found. Set xero_invoice_id and/or a real Xero invoice number on the deal "
-                "(number is tried first when both are set; placeholders like OLD require xero_invoice_id)."
+                "(number is looked up first when both are set)."
             )
             _patch_sync_error(hs, settings, deal_id, msg)
             return SyncDealXeroResult(ok=False, deal_id=deal_id, error=msg)
@@ -228,14 +224,12 @@ def _deal_row_skip_for_invoice_batch_sync(
     row: dict[str, Any],
     *,
     prop: str,
-    id_prop: str,
     settings: Settings,
 ) -> bool:
-    """Skip when invoice number is a placeholder like OLD and there is no xero_invoice_id to resolve."""
+    """Skip when invoice number matches an ignored token (e.g. OLD), regardless of xero_invoice_id."""
     props = row.get("properties") or {}
     inv_raw = (props.get(prop) or "").strip() if prop else ""
-    id_raw = (props.get(id_prop) or "").strip() if id_prop else ""
-    if inv_raw and _xero_invoice_number_is_ignored(inv_raw, settings) and not id_raw:
+    if inv_raw and _xero_invoice_number_is_ignored(inv_raw, settings):
         return True
     return False
 
@@ -274,7 +268,7 @@ def process_deals_with_xero_invoice_number_sync(
         did = str(row.get("id") or "").strip()
         if not did or did in seen_ids:
             return
-        if _deal_row_skip_for_invoice_batch_sync(row, prop=prop, id_prop=id_prop, settings=settings):
+        if prop and _deal_row_skip_for_invoice_batch_sync(row, prop=prop, settings=settings):
             return
         seen_ids.add(did)
         deal_ids.append(did)
