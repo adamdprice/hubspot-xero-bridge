@@ -16,19 +16,36 @@ _log = logging.getLogger(__name__)
 
 def _retry_wait_seconds(response: httpx.Response, attempt_index: int) -> float:
     """
-    Seconds to sleep before retrying after 429/503.
-    Xero often sends Retry-After: 120 — honoring that literally pauses ~2 minutes on the first retry.
-    We cap each wait (still respecting short server hints like 5s) and rely on multiple attempts instead.
+    Seconds before the next attempt (applied via _accounting_cooldown_until so nothing else calls Xero early).
+
+    For 429, Xero often sends Retry-After: 60–120 for the *minute* bucket. We previously capped waits at 30s,
+    which caused retries while still rate-limited — endless 429s. Honor Retry-After for 429 (min 60s, max 600s).
     """
+    status = response.status_code
     ra = response.headers.get("Retry-After")
     if ra:
         try:
             sec = float(ra)
-            max_per_wait = 30.0
-            return min(max_per_wait, max(1.0, sec))
+            if status == 429:
+                return min(600.0, max(60.0, sec))
+            # 503 etc.: short capped waits
+            return min(60.0, max(2.0, sec))
         except ValueError:
             pass
-    return min(60.0, 1.0 * (2**attempt_index))
+    if status == 429:
+        return min(600.0, 60.0 * (2**attempt_index))
+    return min(60.0, 2.0 * (2**attempt_index))
+
+
+def _log_xero_429(response: httpx.Response) -> None:
+    h = response.headers
+    _log.warning(
+        "Xero 429: Retry-After=%s problem=%s min_rem=%s day_rem=%s",
+        h.get("Retry-After"),
+        h.get("X-Rate-Limit-Problem") or h.get("X-RateLimit-Problem"),
+        h.get("X-MinLimit-Remaining"),
+        h.get("X-DayLimit-Remaining"),
+    )
 
 
 def _parse_money(val: Any) -> float:
@@ -93,6 +110,8 @@ class XeroClient:
     # Must use the class attribute for last-at (never assign self._accounting_api_last_at — that shadows per instance).
     _accounting_api_gate: threading.Lock = threading.Lock()
     _accounting_api_last_at: float = 0.0
+    # After 429/503, block all Accounting calls until this time (epoch seconds).
+    _accounting_cooldown_until: float = 0.0
 
     def __init__(
         self,
@@ -163,24 +182,24 @@ class XeroClient:
         params: Optional[dict[str, Any]] = None,
         json: Optional[Any] = None,
         timeout: float = 30.0,
-        max_attempts: int = 6,
+        max_attempts: int = 4,
     ) -> httpx.Response:
         """
         Xero throttles aggressively (429 Too Many Requests). Retry with backoff and Retry-After.
 
         One Accounting API call at a time per process (lock held for wait + request + response).
-        Inter-retry sleeps run outside the lock so we do not block for minutes while honoring Retry-After.
+        Cooldown after 429/503 is stored on the class so no other thread can send before the wait elapses.
         """
         last: Optional[httpx.Response] = None
         for attempt in range(max_attempts):
             with XeroClient._accounting_api_gate:
-                if self._min_interval_seconds > 0:
-                    now = time.time()
-                    wait = (
-                        XeroClient._accounting_api_last_at + self._min_interval_seconds - now
-                    )
-                    if wait > 0:
-                        time.sleep(wait)
+                now = time.time()
+                earliest = max(
+                    XeroClient._accounting_api_last_at + self._min_interval_seconds,
+                    XeroClient._accounting_cooldown_until,
+                )
+                if earliest > now:
+                    time.sleep(earliest - now)
                 with httpx.Client(timeout=timeout) as client:
                     r = client.request(
                         method,
@@ -190,17 +209,22 @@ class XeroClient:
                         headers=self._headers(),
                     )
                 XeroClient._accounting_api_last_at = time.time()
+                if r.status_code in (429, 503) and attempt < max_attempts - 1:
+                    wait = _retry_wait_seconds(r, attempt)
+                    if r.status_code == 429:
+                        _log_xero_429(r)
+                    XeroClient._accounting_cooldown_until = time.time() + wait
+                    _log.warning(
+                        "Xero %s; next attempt after %.1fs (attempt %s/%s)",
+                        r.status_code,
+                        wait,
+                        attempt + 2,
+                        max_attempts,
+                    )
+                else:
+                    XeroClient._accounting_cooldown_until = 0.0
             last = r
             if r.status_code in (429, 503) and attempt < max_attempts - 1:
-                wait = _retry_wait_seconds(r, attempt)
-                _log.warning(
-                    "Xero rate limit / unavailable (%s); waiting %.1fs before retry %s/%s",
-                    r.status_code,
-                    wait,
-                    attempt + 2,
-                    max_attempts,
-                )
-                time.sleep(wait)
                 continue
             return r
         assert last is not None
