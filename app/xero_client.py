@@ -14,11 +14,17 @@ _log = logging.getLogger(__name__)
 
 
 def _retry_wait_seconds(response: httpx.Response, attempt_index: int) -> float:
-    """Honor Retry-After when present; else exponential backoff (capped)."""
+    """
+    Seconds to sleep before retrying after 429/503.
+    Xero often sends Retry-After: 120 — honoring that literally pauses ~2 minutes on the first retry.
+    We cap each wait (still respecting short server hints like 5s) and rely on multiple attempts instead.
+    """
     ra = response.headers.get("Retry-After")
     if ra:
         try:
-            return min(120.0, float(ra))
+            sec = float(ra)
+            max_per_wait = 30.0
+            return min(max_per_wait, max(1.0, sec))
         except ValueError:
             pass
     return min(60.0, 1.0 * (2**attempt_index))
