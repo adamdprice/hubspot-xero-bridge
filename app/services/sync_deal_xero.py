@@ -3,13 +3,15 @@ Pull invoice status (and number / Xero ID) from Xero into HubSpot when sync is r
 
 Request sync via sync_with_xero=true and/or xero_sync_trigger dropdown (default option value "Sync").
 
-Uses xero_invoice_id (preferred) or invoice_number to find the invoice in Xero.
+Uses invoice_number and/or xero_invoice_id to find the invoice in Xero (number is tried first when set).
 """
 from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass
 from typing import Any, Optional
+
+import httpx
 
 from app.config import Settings
 from app.deal_sync import deal_xero_sync_read_property_names, patch_deal_xero
@@ -105,15 +107,24 @@ def sync_deal_from_xero(
 
     try:
         inv: Optional[dict[str, Any]] = None
-        if inv_id:
-            inv = xero.get_invoice(inv_id)
-            if not inv or not inv.get("InvoiceID"):
-                inv = None
-        if inv is None and inv_num_hs:
+        # Prefer invoice number when present (most users only have INV-… on the deal). Stale/wrong UUID
+        # would otherwise 404 and skip the number path.
+        if inv_num_hs:
             inv = xero.get_invoice_by_number(inv_num_hs)
+        if inv is None and inv_id:
+            try:
+                inv = xero.get_invoice(inv_id)
+                if not inv or not inv.get("InvoiceID"):
+                    inv = None
+            except httpx.HTTPStatusError as e:
+                code = e.response.status_code if e.response is not None else None
+                if code != 404:
+                    raise
+                inv = None
         if not inv:
             msg = (
-                "No Xero invoice found. Set xero_invoice_id (Xero UUID) and/or invoice_number on the deal."
+                "No Xero invoice found. Set invoice_number and/or xero_invoice_id on the deal "
+                "(number is looked up first when both are set)."
             )
             _patch_sync_error(hs, settings, deal_id, msg)
             return SyncDealXeroResult(ok=False, deal_id=deal_id, error=msg)
