@@ -142,7 +142,20 @@ def auth_xero_callback(
             status_code=400,
         )
     if not code or not state:
-        return HTMLResponse("Missing code or state.", status_code=400)
+        return HTMLResponse(
+            "<!DOCTYPE html><html><head><meta charset='utf-8'/><title>Xero OAuth</title></head>"
+            "<body style='font-family:system-ui,sans-serif;padding:2rem;max-width:40rem;line-height:1.5'>"
+            "<h1>Missing Xero callback parameters</h1>"
+            "<p>This page must be reached by <strong>redirect from Xero</strong> after you approve access. "
+            "Opening <code>/auth/xero/callback</code> directly, refreshing after login, or using an old bookmark "
+            "will not include <code>code</code> and <code>state</code>.</p>"
+            "<p><strong>What to do:</strong> start a new connection from "
+            "<a href='/auth/xero/start'>/auth/xero/start</a> (or click <strong>Connect Xero</strong> on the app home page), "
+            "then sign in and approve — do not bookmark the callback URL.</p>"
+            "<p><a href='/'>← Back to app</a></p>"
+            "</body></html>",
+            status_code=400,
+        )
     _cleanup_oauth_states()
     if state not in _oauth_states:
         return HTMLResponse(
