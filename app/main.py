@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import html
 import json
-import logging
 import os
 import secrets
 import time
@@ -34,9 +33,12 @@ from app.xero_oauth import DEFAULT_SCOPES, build_authorize_url, exchange_authori
 
 load_dotenv()
 
-_log_webhook = logging.getLogger("hubspot.webhook")
-
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+
+
+def _webhook_stdout_line(payload: dict[str, Any]) -> None:
+    """Write one JSON line to stdout (Railway captures this; app loggers often omit INFO)."""
+    print(json.dumps({"hubspot_webhook": True, **payload}, default=str), flush=True)
 
 app = FastAPI(title="HubSpot–Xero bridge", version="0.2.0")
 
@@ -520,6 +522,14 @@ def _hubspot_subscription_type(body: dict[str, Any]) -> str:
     return (body.get("subscriptionType") or body.get("eventType") or "").strip()
 
 
+def _peek_subscription_types_from_body(body: Any) -> list[str]:
+    if isinstance(body, list):
+        return [_hubspot_subscription_type(x) for x in body if isinstance(x, dict)]
+    if isinstance(body, dict):
+        return [_hubspot_subscription_type(body)]
+    return []
+
+
 def _hubspot_webhook_skip(body: dict[str, Any], settings: Settings) -> tuple[bool, str]:
     """
     Skip noisy CRM webhooks (wrong property, cleared dropdown).
@@ -565,13 +575,13 @@ def _process_hubspot_sync_deal_event(body: dict[str, Any], settings: Settings) -
     deal_id = _hubspot_webhook_deal_id(body)
     if not deal_id:
         out: dict[str, Any] = {"ok": False, "error": "missing objectId, dealId, or deal_id"}
-        _log_webhook.info("sync-deal %s", json.dumps(out))
+        _webhook_stdout_line({"step": "result", **out})
         return out
 
     skip, reason = _hubspot_webhook_skip(body, settings)
     if skip:
         out = {"deal_id": deal_id, "ok": True, "skipped": True, "reason": reason}
-        _log_webhook.info("sync-deal %s", json.dumps(out))
+        _webhook_stdout_line({"step": "result", **out})
         return out
 
     is_hubspot_crm = bool(_hubspot_subscription_type(body))
@@ -586,7 +596,7 @@ def _process_hubspot_sync_deal_event(body: dict[str, Any], settings: Settings) -
         out = {"deal_id": deal_id, "ok": False, "error": result.error or "Sync failed"}
     else:
         out = {"deal_id": result.deal_id, "ok": True}
-    _log_webhook.info("sync-deal %s", json.dumps(out))
+    _webhook_stdout_line({"step": "result", **out})
     return out
 
 
@@ -603,6 +613,26 @@ async def post_webhook_sync_deal(request: Request):
     except Exception:
         raise HTTPException(status_code=400, detail="Request body must be valid JSON") from None
 
+    # HubSpot puts the deal id in JSON as objectId (not in the URL). Echo so Railway logs show it.
+    received_ids: list[str] = []
+    if isinstance(body, list):
+        for item in body:
+            if isinstance(item, dict):
+                did = _hubspot_webhook_deal_id(item)
+                if did:
+                    received_ids.append(did)
+    elif isinstance(body, dict):
+        did = _hubspot_webhook_deal_id(body)
+        if did:
+            received_ids.append(did)
+    _webhook_stdout_line(
+        {
+            "step": "received",
+            "object_ids": received_ids,
+            "subscription_types": _peek_subscription_types_from_body(body),
+        }
+    )
+
     try:
         settings = get_settings()
     except Exception as e:
@@ -610,13 +640,13 @@ async def post_webhook_sync_deal(request: Request):
 
     if isinstance(body, list):
         if not body:
-            _log_webhook.info("sync-deal %s", json.dumps({"ok": True, "skipped": True, "reason": "empty_batch"}))
+            _webhook_stdout_line({"step": "result", "ok": True, "skipped": True, "reason": "empty_batch"})
             return {"ok": True, "skipped": True, "reason": "empty_batch"}
         results: list[dict[str, Any]] = []
         for item in body:
             if not isinstance(item, dict):
                 results.append({"ok": False, "error": "expected_object_in_batch"})
-                _log_webhook.info("sync-deal %s", json.dumps(results[-1]))
+                _webhook_stdout_line({"step": "result", **results[-1]})
                 continue
             results.append(_process_hubspot_sync_deal_event(item, settings))
         any_err = any(not r.get("ok") for r in results)
