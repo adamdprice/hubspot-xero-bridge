@@ -56,6 +56,9 @@ async def _xero_invoice_number_sync_background_loop(interval_sec: int) -> None:
     while True:
         try:
             settings = get_settings()
+            if settings.hubspot_xero_invoice_number_sync_disabled:
+                await asyncio.sleep(interval_sec)
+                continue
             max_d = max(1, int(settings.hubspot_xero_invoice_number_sync_max_deals or 500))
             out = await asyncio.to_thread(
                 process_deals_with_xero_invoice_number_sync,
@@ -91,11 +94,15 @@ async def lifespan(app: FastAPI):
     try:
         s = get_settings()
         interval = int(s.hubspot_xero_invoice_number_sync_interval_seconds or 0)
+        disabled = bool(s.hubspot_xero_invoice_number_sync_disabled)
     except Exception:
         interval = 0
-    if interval > 0:
+        disabled = True
+    if interval > 0 and not disabled:
         task = asyncio.create_task(_xero_invoice_number_sync_background_loop(interval))
         _log_app.info("xero_invoice_number_sync_timer started (interval=%ss)", interval)
+    elif interval > 0 and disabled:
+        _log_app.info("xero_invoice_number_sync_timer not started (hubspot_xero_invoice_number_sync_disabled=true)")
     yield
     if task:
         task.cancel()
@@ -171,6 +178,7 @@ def api_status():
             "xero_oauth_ready": False,
             "xero_invoice_number_sync_interval_seconds": None,
             "xero_invoice_number_sync_max_deals": None,
+            "xero_invoice_number_sync_disabled": None,
             "error": str(e),
         }
     return {
@@ -186,6 +194,7 @@ def api_status():
         "oauth_start_path": "/auth/xero/start",
         "xero_invoice_number_sync_interval_seconds": s.hubspot_xero_invoice_number_sync_interval_seconds,
         "xero_invoice_number_sync_max_deals": s.hubspot_xero_invoice_number_sync_max_deals,
+        "xero_invoice_number_sync_disabled": s.hubspot_xero_invoice_number_sync_disabled,
         "defaults": {
             "sales_account": s.xero_sales_account_code,
             "item_code": s.xero_item_code,

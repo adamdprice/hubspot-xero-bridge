@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     # Use a single uvicorn worker if you enable this, or each worker would run its own loop.
     hubspot_xero_invoice_number_sync_interval_seconds: int = 600
     hubspot_xero_invoice_number_sync_max_deals: int = 500
+    # Temporarily stop invoice-number batch sync (timer + POST /api/cron/sync-xero-by-invoice-number). Webhook trigger sync unchanged.
+    hubspot_xero_invoice_number_sync_disabled: bool = False
 
     # OAuth app credentials (always required for Xero API after you connect)
     xero_client_id: str = ""

@@ -209,6 +209,13 @@ def process_deals_with_xero_invoice_number_sync(
     Find deals where the Xero invoice number field is set (HubSpot HAS_PROPERTY) and pull status from Xero.
     Does not require xero_sync_trigger or sync_with_xero — for scheduled / cron sync.
     """
+    if settings.hubspot_xero_invoice_number_sync_disabled:
+        return {
+            "queued": 0,
+            "results": [],
+            "disabled": True,
+            "reason": "hubspot_xero_invoice_number_sync_disabled",
+        }
     prop = (settings.hubspot_deal_prop_xero_invoice_number or "").strip()
     if not prop:
         return {"queued": 0, "results": [], "error": "hubspot_deal_prop_xero_invoice_number is not configured"}
