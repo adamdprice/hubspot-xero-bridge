@@ -89,8 +89,8 @@ def xero_invoice_contact_id(inv: dict[str, Any]) -> str:
 class XeroClient:
     TOKEN_URL = "https://identity.xero.com/connect/token"
     API_BASE = "https://api.xero.com/api.xro/2.0"
-    # Per-process gate: each sync path creates a new XeroClient; without this, min_interval would reset every call
-    # and batch sync would hammer Xero (immediate 429). All Accounting API traffic shares this spacing.
+    # Per-process: serialize Accounting API calls and space by min_interval from end of previous response.
+    # Must use the class attribute for last-at (never assign self._accounting_api_last_at — that shadows per instance).
     _accounting_api_gate: threading.Lock = threading.Lock()
     _accounting_api_last_at: float = 0.0
 
@@ -155,17 +155,6 @@ class XeroClient:
             "Content-Type": "application/json",
         }
 
-    def _throttle(self) -> None:
-        """Space out Accounting API calls to stay under Xero per-minute limits (reduces 429)."""
-        if self._min_interval_seconds <= 0:
-            return
-        with self._accounting_api_gate:
-            now = time.time()
-            wait = self._accounting_api_last_at + self._min_interval_seconds - now
-            if wait > 0:
-                time.sleep(wait)
-            self._accounting_api_last_at = time.time()
-
     def _request(
         self,
         method: str,
@@ -178,18 +167,29 @@ class XeroClient:
     ) -> httpx.Response:
         """
         Xero throttles aggressively (429 Too Many Requests). Retry with backoff and Retry-After.
+
+        One Accounting API call at a time per process (lock held for wait + request + response).
+        Inter-retry sleeps run outside the lock so we do not block for minutes while honoring Retry-After.
         """
         last: Optional[httpx.Response] = None
         for attempt in range(max_attempts):
-            self._throttle()
-            with httpx.Client(timeout=timeout) as client:
-                r = client.request(
-                    method,
-                    url,
-                    params=params,
-                    json=json,
-                    headers=self._headers(),
-                )
+            with XeroClient._accounting_api_gate:
+                if self._min_interval_seconds > 0:
+                    now = time.time()
+                    wait = (
+                        XeroClient._accounting_api_last_at + self._min_interval_seconds - now
+                    )
+                    if wait > 0:
+                        time.sleep(wait)
+                with httpx.Client(timeout=timeout) as client:
+                    r = client.request(
+                        method,
+                        url,
+                        params=params,
+                        json=json,
+                        headers=self._headers(),
+                    )
+                XeroClient._accounting_api_last_at = time.time()
             last = r
             if r.status_code in (429, 503) and attempt < max_attempts - 1:
                 wait = _retry_wait_seconds(r, attempt)
