@@ -467,9 +467,9 @@ def post_invoice_from_deal(deal_id: str, body: Optional[FromDealBody] = None):
 @app.post("/api/deals/{deal_id}/sync-from-xero")
 def post_sync_deal_from_xero(
     deal_id: str,
-    force: bool = Query(False, description="If true, sync even when sync_with_xero is not checked."),
+    force: bool = Query(False, description="If true, sync even when no sync flag/trigger is set."),
 ):
-    """Pull invoice status from Xero into the deal; clears sync_with_xero when done (success or error)."""
+    """Pull invoice status from Xero into the deal; clears sync_with_xero and xero_sync_trigger when done."""
     try:
         settings = get_settings()
     except Exception as e:
@@ -479,7 +479,10 @@ def post_sync_deal_from_xero(
     if result.skipped:
         raise HTTPException(
             status_code=400,
-            detail="Set sync_with_xero to true on this deal first, or call with ?force=true.",
+            detail=(
+                "Set sync_with_xero or xero_sync_trigger (e.g. Sync) on this deal first, "
+                "or call with ?force=true."
+            ),
         )
     if not result.ok:
         raise HTTPException(status_code=400, detail=result.error or "Sync failed")
@@ -488,7 +491,7 @@ def post_sync_deal_from_xero(
 
 @app.post("/api/cron/sync-xero")
 def post_cron_sync_xero(max_deals: int = Query(50, ge=1, le=100)):
-    """Process deals where sync_with_xero is true (for Railway cron or scheduled HTTP). Uses same auth as the bridge."""
+    """Process deals pending sync (sync_with_xero or xero_sync_trigger). Uses same auth as the bridge."""
     try:
         settings = get_settings()
     except Exception as e:

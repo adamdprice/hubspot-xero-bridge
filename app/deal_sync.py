@@ -22,6 +22,7 @@ def deal_xero_extra_property_names(settings: Settings) -> list[str]:
         settings.hubspot_deal_prop_xero_sync_key,
         settings.hubspot_deal_prop_xero_last_error,
         settings.hubspot_deal_prop_sync_with_xero,
+        settings.hubspot_deal_prop_xero_sync_trigger,
         settings.hubspot_deal_prop_last_xero_sync,
         settings.hubspot_deal_prop_xero_sync_last_error_date,
     ]
@@ -61,6 +62,7 @@ def deal_xero_sync_read_property_names(settings: Settings) -> list[str]:
         settings.hubspot_deal_prop_xero_invoice_number,
         settings.hubspot_deal_prop_xero_invoice_status,
         settings.hubspot_deal_prop_sync_with_xero,
+        settings.hubspot_deal_prop_xero_sync_trigger,
         settings.hubspot_deal_prop_last_xero_sync,
         settings.hubspot_deal_prop_xero_last_error,
         settings.hubspot_deal_prop_xero_sync_last_error_date,

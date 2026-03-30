@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     hubspot_deal_prop_xero_last_error: str = "xero_sync_last_error"
     # Optional: set sync_with_xero=true on a deal to pull status from Xero (cron or POST /api/deals/{id}/sync-from-xero)
     hubspot_deal_prop_sync_with_xero: str = "sync_with_xero"
+    # Dropdown alternative (e.g. single option "Sync") for workflow triggers that cannot use booleans
+    hubspot_deal_prop_xero_sync_trigger: str = "xero_sync_trigger"
+    hubspot_deal_xero_sync_trigger_value: str = "Sync"
     hubspot_deal_prop_last_xero_sync: str = "last_xero_sync"
     hubspot_deal_prop_xero_sync_last_error_date: str = "xero_sync_last_error_date"
 
