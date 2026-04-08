@@ -53,10 +53,14 @@ _log_app = logging.getLogger("hubspot_xero_bridge")
 
 
 def _print_json_line(payload: dict[str, Any]) -> None:
-    """Railway often drops or blanks stdout-only JSON; mirror to stderr so logs match Uvicorn [err] stream."""
-    line = json.dumps(payload, default=str)
-    print(line, flush=True)
-    print(line, file=sys.stderr, flush=True)
+    """
+    Railway log UI often shows JSON-only lines as blank. Prefix every line so text is always visible.
+    """
+    line = "HUBSPOT_XERO_BRIDGE " + json.dumps(payload, default=str)
+    sys.stdout.write(line + "\n")
+    sys.stdout.flush()
+    sys.stderr.write(line + "\n")
+    sys.stderr.flush()
 
 
 async def _xero_invoice_number_sync_background_loop(interval_sec: int) -> None:
