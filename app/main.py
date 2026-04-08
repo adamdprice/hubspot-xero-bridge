@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import secrets
+import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -51,6 +52,13 @@ def _webhook_stdout_line(payload: dict[str, Any]) -> None:
 _log_app = logging.getLogger("hubspot_xero_bridge")
 
 
+def _print_json_line(payload: dict[str, Any]) -> None:
+    """Railway often drops or blanks stdout-only JSON; mirror to stderr so logs match Uvicorn [err] stream."""
+    line = json.dumps(payload, default=str)
+    print(line, flush=True)
+    print(line, file=sys.stderr, flush=True)
+
+
 async def _xero_invoice_number_sync_background_loop(interval_sec: int) -> None:
     """Every interval_sec, sync deals that have Xero invoice number on the deal (HubSpot HAS_PROPERTY)."""
     while True:
@@ -71,18 +79,14 @@ async def _xero_invoice_number_sync_background_loop(interval_sec: int) -> None:
                 out.get("queued"),
                 ok_n,
             )
-            print(
-                json.dumps(
-                    {
-                        "xero_invoice_number_sync_timer": True,
-                        "queued": out.get("queued"),
-                        "search_mode": out.get("search_mode"),
-                        "ok_count": ok_n,
-                        "error": out.get("error"),
-                    },
-                    default=str,
-                ),
-                flush=True,
+            _print_json_line(
+                {
+                    "xero_invoice_number_sync_timer": True,
+                    "queued": out.get("queued"),
+                    "search_mode": out.get("search_mode"),
+                    "ok_count": ok_n,
+                    "error": out.get("error"),
+                }
             )
         except Exception:
             _log_app.exception("xero_invoice_number_sync_timer failed")
@@ -103,49 +107,40 @@ async def lifespan(app: FastAPI):
     if interval > 0 and not disabled:
         task = asyncio.create_task(_xero_invoice_number_sync_background_loop(interval))
         _log_app.info("xero_invoice_number_sync_timer started (interval=%ss)", interval)
-        print(
-            json.dumps(
-                {
-                    "startup": "hubspot_xero_bridge",
-                    "xero_invoice_number_sync_timer": "started",
-                    "interval_seconds": interval,
-                }
-            ),
-            flush=True,
+        _print_json_line(
+            {
+                "startup": "hubspot_xero_bridge",
+                "xero_invoice_number_sync_timer": "started",
+                "interval_seconds": interval,
+            }
         )
     elif interval > 0 and disabled:
         _log_app.info(
             "xero_invoice_number_sync_timer not started (HUBSPOT_XERO_INVOICE_NUMBER_SYNC_DISABLED=true, interval=%ss)",
             interval,
         )
-        print(
-            json.dumps(
-                {
-                    "startup": "hubspot_xero_bridge",
-                    "xero_invoice_number_sync_timer": "not_started",
-                    "reason": "HUBSPOT_XERO_INVOICE_NUMBER_SYNC_DISABLED=true",
-                    "interval_seconds": interval,
-                    "hint": "set HUBSPOT_XERO_INVOICE_NUMBER_SYNC_DISABLED=false",
-                }
-            ),
-            flush=True,
+        _print_json_line(
+            {
+                "startup": "hubspot_xero_bridge",
+                "xero_invoice_number_sync_timer": "not_started",
+                "reason": "HUBSPOT_XERO_INVOICE_NUMBER_SYNC_DISABLED=true",
+                "interval_seconds": interval,
+                "hint": "set HUBSPOT_XERO_INVOICE_NUMBER_SYNC_DISABLED=false",
+            }
         )
     else:
         _log_app.info(
             "xero_invoice_number_sync_timer not started (interval_seconds=%s — set HUBSPOT_XERO_INVOICE_NUMBER_SYNC_INTERVAL_SECONDS e.g. 5400 for 90min, and DISABLED=false)",
             interval,
         )
-        print(
-            json.dumps(
-                {
-                    "startup": "hubspot_xero_bridge",
-                    "xero_invoice_number_sync_timer": "not_started",
-                    "reason": "interval_seconds_is_zero_or_unset",
-                    "interval_seconds": interval,
-                    "hint": "set HUBSPOT_XERO_INVOICE_NUMBER_SYNC_INTERVAL_SECONDS=5400 (90 min) or HUBSPOT_XERO_INVOICE_NUMBER_SYNC_INTERVAL=5400",
-                }
-            ),
-            flush=True,
+        _print_json_line(
+            {
+                "startup": "hubspot_xero_bridge",
+                "xero_invoice_number_sync_timer": "not_started",
+                "reason": "interval_seconds_is_zero_or_unset",
+                "interval_seconds": interval,
+                "hint": "set HUBSPOT_XERO_INVOICE_NUMBER_SYNC_INTERVAL_SECONDS=5400 (90 min) or HUBSPOT_XERO_INVOICE_NUMBER_SYNC_INTERVAL=5400",
+            }
         )
     yield
     if task:
