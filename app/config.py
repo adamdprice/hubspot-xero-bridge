@@ -42,7 +42,14 @@ class Settings(BaseSettings):
     # Set to 0 to disable the background loop (e.g. use Railway cron on /api/cron/sync-xero-by-invoice-number only).
     # Use a single uvicorn worker if you enable this, or each worker would run its own loop.
     # Background batch sync cadence (seconds). 5400 = every 90 minutes. Set 0 to disable the in-process timer only.
-    hubspot_xero_invoice_number_sync_interval_seconds: int = 5400
+    # Alias: some hosts use HUBSPOT_XERO_INVOICE_NUMBER_SYNC_INTERVAL (missing _SECONDS) — accept both.
+    hubspot_xero_invoice_number_sync_interval_seconds: int = Field(
+        default=5400,
+        validation_alias=AliasChoices(
+            "HUBSPOT_XERO_INVOICE_NUMBER_SYNC_INTERVAL_SECONDS",
+            "HUBSPOT_XERO_INVOICE_NUMBER_SYNC_INTERVAL",
+        ),
+    )
     hubspot_xero_invoice_number_sync_max_deals: int = 150
     # When true: no invoice-number batch sync (in-process timer + POST /api/cron/sync-xero-by-invoice-number).
     hubspot_xero_invoice_number_sync_disabled: bool = False
