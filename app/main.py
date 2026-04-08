@@ -25,6 +25,7 @@ from app.deal_sync import deal_xero_search_property_names
 from app.hubspot_client import HubSpotClient
 from app.services.invoice_from_deal import create_xero_invoice_from_deal
 from app.services.manual_invoice import create_manual_draft_invoice
+from app.diagnostics import run_pipeline_diagnostics
 from app.services.sync_deal_xero import (
     process_deals_pending_xero_sync,
     process_deals_with_xero_invoice_number_sync,
@@ -78,18 +79,28 @@ async def _xero_invoice_number_sync_background_loop(interval_sec: int) -> None:
                 settings,
                 max_deals=max_d,
             )
-            ok_n = sum(1 for r in out.get("results") or [] if r.get("ok"))
+            results = out.get("results") or []
+            # ok=True with skipped=True means no HubSpot patch (e.g. paid skip); do not count as "synced".
+            patched_n = sum(1 for r in results if r.get("ok") and not r.get("skipped"))
+            skipped_n = sum(1 for r in results if r.get("skipped"))
+            failed_n = sum(1 for r in results if not r.get("ok"))
+            deal_ids = [str(r.get("deal_id") or "") for r in results if r.get("deal_id")]
             _log_app.info(
-                "xero_invoice_number_sync_timer: queued=%s ok=%s",
+                "xero_invoice_number_sync_timer: queued=%s patched=%s skipped=%s failed=%s",
                 out.get("queued"),
-                ok_n,
+                patched_n,
+                skipped_n,
+                failed_n,
             )
             _print_json_line(
                 {
                     "xero_invoice_number_sync_timer": True,
                     "queued": out.get("queued"),
                     "search_mode": out.get("search_mode"),
-                    "ok_count": ok_n,
+                    "ok_count": patched_n,
+                    "skipped_count": skipped_n,
+                    "failed_count": failed_n,
+                    "deal_ids": deal_ids,
                     "error": out.get("error"),
                 }
             )
@@ -259,6 +270,31 @@ def api_status():
             "tax_type": s.xero_line_tax_type,
         },
     }
+
+
+@app.get("/api/diagnostics/pipeline")
+def get_diagnostics_pipeline(
+    deal_id: Optional[str] = Query(
+        None,
+        description="Optional: HubSpot deal id — loads Xero invoice and shows mapped status (no HubSpot PATCH).",
+    ),
+    max_deals: int = Query(10, ge=1, le=100, description="Max deals for batch dry-run id list (same filters as invoice sync)."),
+    skip_batch: bool = Query(False, description="If true, skip enumerating deal ids (HubSpot search dry-run)."),
+):
+    """
+    Verify end-to-end: HubSpot CRM read, Xero Organisation (Accounting API), optional batch deal id list (dry_run),
+    optional per-deal Xero→status preview. Use locally or on Railway with Authorization: Bearer when BRIDGE_AUTH_TOKEN is set.
+    """
+    try:
+        settings = get_settings()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    return run_pipeline_diagnostics(
+        settings,
+        deal_id=(deal_id or "").strip() or None,
+        max_deals=max_deals,
+        include_batch_preview=not skip_batch,
+    )
 
 
 @app.get("/auth/xero/start")

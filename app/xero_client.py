@@ -381,6 +381,13 @@ class XeroClient:
             raise RuntimeError("Xero create invoice returned no Invoices")
         return invoices[0]
 
+    def get_organisation(self) -> list[dict[str, Any]]:
+        """Lightweight Accounting API check (org name); verifies token + tenant."""
+        r = self._request("GET", f"{self.API_BASE}/Organisation")
+        r.raise_for_status()
+        data = r.json()
+        return data.get("Organisations") or []
+
     def get_invoice(self, invoice_id: str) -> dict[str, Any]:
         r = self._request("GET", f"{self.API_BASE}/Invoices/{invoice_id}")
         r.raise_for_status()

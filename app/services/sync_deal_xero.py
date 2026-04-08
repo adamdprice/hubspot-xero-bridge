@@ -280,10 +280,13 @@ def process_deals_with_xero_invoice_number_sync(
     settings: Settings,
     *,
     max_deals: int = 150,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """
     Find deals with xero_invoice_number and/or xero_invoice_id set and pull from Xero.
     Does not require xero_sync_trigger or sync_with_xero — for scheduled / cron sync.
+
+    If dry_run is True, only resolves the same deal id list as a full run (search_mode, deal_ids) and does not call Xero or patch HubSpot.
 
     When hubspot_xero_invoice_number_sync_use_hubspot_filters is true (default), the deal query uses HubSpot search:
     invoice number known, hubspot_xero_invoice_sync_dealstage_eq (e.g. Closed Lost), status not Paid, ignore tokens.
@@ -389,6 +392,14 @@ def process_deals_with_xero_invoice_number_sync(
         _paginate_has_property(id_prop)
 
     results: list[dict[str, Any]] = []
+    if dry_run:
+        return {
+            "queued": len(deal_ids),
+            "deal_ids": deal_ids,
+            "results": [],
+            "search_mode": search_mode,
+            "dry_run": True,
+        }
     for did in deal_ids:
         r = sync_deal_from_xero(
             settings,
@@ -404,5 +415,10 @@ def process_deals_with_xero_invoice_number_sync(
                 "error": r.error,
             }
         )
-    out: dict[str, Any] = {"queued": len(deal_ids), "results": results, "search_mode": search_mode}
+    out: dict[str, Any] = {
+        "queued": len(deal_ids),
+        "deal_ids": deal_ids,
+        "results": results,
+        "search_mode": search_mode,
+    }
     return out
