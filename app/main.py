@@ -50,12 +50,13 @@ def _webhook_stdout_line(payload: dict[str, Any]) -> None:
 
 
 _log_app = logging.getLogger("hubspot_xero_bridge")
+# Same logger Uvicorn uses for "Application startup complete" — Railway always displays these lines.
+_uvicorn = logging.getLogger("uvicorn.error")
 
 
 def _print_json_line(payload: dict[str, Any]) -> None:
-    """
-    Railway log UI often shows JSON-only lines as blank. Prefix every line so text is always visible.
-    """
+    """Structured line for parsers; also emit plain key=value via uvicorn logger (Railway hides raw stdout/JSON)."""
+    _uvicorn.info("HUBSPOT_XERO_BRIDGE %s", json.dumps(payload, default=str))
     line = "HUBSPOT_XERO_BRIDGE " + json.dumps(payload, default=str)
     sys.stdout.write(line + "\n")
     sys.stdout.flush()
