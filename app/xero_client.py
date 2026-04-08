@@ -66,8 +66,9 @@ def invoice_status_ui_label(inv: dict[str, Any]) -> str:
     """
     Map Xero invoice API data to wording similar to the Xero web app (not the raw Status enum).
 
-    Raw API uses values like AUTHORISED; the UI shows e.g. "Awaiting payment" for unpaid sales invoices.
-    Uses Status plus AmountDue where relevant.
+    Raw API often uses AUTHORISED for approved sales invoices; PAID once settled. In practice Xero can still
+    return AUTHORISED with a tiny AmountDue (rounding) or set FullyPaidOnDate while Status catches up — the
+    web UI may show Paid before Status flips. We treat FullyPaidOnDate, near-zero AmountDue, or AmountPaid≈Total as Paid.
     """
     raw = inv.get("Status")
     st = "" if raw is None else str(raw).strip().upper()
@@ -83,10 +84,21 @@ def invoice_status_ui_label(inv: dict[str, Any]) -> str:
         return "Submitted"
     if st == "PAID":
         return "Paid"
-    if st == "AUTHORISED":
-        if amount_due > 1e-6:
-            return "Awaiting payment"
+
+    # Set on fully paid invoices even if Status is still AUTHORISED for a short window
+    fpo = inv.get("FullyPaidOnDate")
+    if fpo not in (None, ""):
         return "Paid"
+
+    if st == "AUTHORISED":
+        amount_paid = _parse_money(inv.get("AmountPaid"))
+        total = _parse_money(inv.get("Total"))
+        # Sub-cent residuals / FX rounding — UI shows Paid while AmountDue is not exactly 0
+        if amount_due <= 0.02:
+            return "Paid"
+        if total > 0.01 and amount_paid + 0.02 >= total:
+            return "Paid"
+        return "Awaiting payment"
     if st:
         return st.replace("_", " ").title()
     return ""
