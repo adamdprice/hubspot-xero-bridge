@@ -99,6 +99,7 @@ async def lifespan(app: FastAPI):
     except Exception:
         interval = 0
         disabled = True
+    # Always print JSON to stdout — Railway often omits app logger INFO; uvicorn INFO still shows.
     if interval > 0 and not disabled:
         task = asyncio.create_task(_xero_invoice_number_sync_background_loop(interval))
         _log_app.info("xero_invoice_number_sync_timer started (interval=%ss)", interval)
@@ -117,10 +118,34 @@ async def lifespan(app: FastAPI):
             "xero_invoice_number_sync_timer not started (HUBSPOT_XERO_INVOICE_NUMBER_SYNC_DISABLED=true, interval=%ss)",
             interval,
         )
+        print(
+            json.dumps(
+                {
+                    "startup": "hubspot_xero_bridge",
+                    "xero_invoice_number_sync_timer": "not_started",
+                    "reason": "HUBSPOT_XERO_INVOICE_NUMBER_SYNC_DISABLED=true",
+                    "interval_seconds": interval,
+                    "hint": "set HUBSPOT_XERO_INVOICE_NUMBER_SYNC_DISABLED=false",
+                }
+            ),
+            flush=True,
+        )
     else:
         _log_app.info(
             "xero_invoice_number_sync_timer not started (interval_seconds=%s — set HUBSPOT_XERO_INVOICE_NUMBER_SYNC_INTERVAL_SECONDS e.g. 5400 for 90min, and DISABLED=false)",
             interval,
+        )
+        print(
+            json.dumps(
+                {
+                    "startup": "hubspot_xero_bridge",
+                    "xero_invoice_number_sync_timer": "not_started",
+                    "reason": "interval_seconds_is_zero_or_unset",
+                    "interval_seconds": interval,
+                    "hint": "set HUBSPOT_XERO_INVOICE_NUMBER_SYNC_INTERVAL_SECONDS=5400 (90 min) or HUBSPOT_XERO_INVOICE_NUMBER_SYNC_INTERVAL=5400",
+                }
+            ),
+            flush=True,
         )
     yield
     if task:
