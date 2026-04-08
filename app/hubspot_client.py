@@ -314,10 +314,10 @@ class HubSpotClient:
         extra_properties: Optional[list[str]] = None,
         limit: int = 100,
         after: Optional[str] = None,
+        dealstage_eq: Optional[str] = None,
     ) -> tuple[list[dict], Optional[str]]:
         """
-        Deals that match a typical CRM list view: invoice number is set, status is not Paid,
-        and invoice number does not contain configured tokens (e.g. OLD) — same idea as HubSpot UI filters.
+        Deals: invoice number set, optional dealstage EQ, status not Paid, invoice number tokens not contained.
         All filters in one group are ANDed.
         """
         pn = (invoice_number_prop or "").strip()
@@ -328,12 +328,16 @@ class HubSpotClient:
             "dealname",
             "amount",
             "hs_object_id",
+            "dealstage",
         ]
         if extra_properties:
             props = list(dict.fromkeys(props + extra_properties))
         filters: list[dict[str, Any]] = [
             {"propertyName": pn, "operator": "HAS_PROPERTY"},
         ]
+        ds = (dealstage_eq or "").strip()
+        if ds:
+            filters.append({"propertyName": "dealstage", "operator": "EQ", "value": ds})
         if exclude_status_paid and sp:
             filters.append({"propertyName": sp, "operator": "NEQ", "value": "Paid"})
         for raw in invoice_number_not_contains_tokens:

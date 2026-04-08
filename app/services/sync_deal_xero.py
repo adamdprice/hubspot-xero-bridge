@@ -285,8 +285,8 @@ def process_deals_with_xero_invoice_number_sync(
     Find deals with xero_invoice_number and/or xero_invoice_id set and pull from Xero.
     Does not require xero_sync_trigger or sync_with_xero — for scheduled / cron sync.
 
-    When hubspot_xero_invoice_number_sync_use_hubspot_filters is true (default), the deal query matches a typical
-    CRM view: invoice number known, status not Paid, invoice number does not contain ignore tokens (e.g. OLD).
+    When hubspot_xero_invoice_number_sync_use_hubspot_filters is true (default), the deal query uses HubSpot search:
+    invoice number known, hubspot_xero_invoice_sync_dealstage_eq (e.g. Closed Lost), status not Paid, ignore tokens.
     Set hubspot_xero_invoice_sync_include_id_without_number=false to exclude ID-only deals (invoice number empty).
     """
     if settings.hubspot_xero_invoice_number_sync_disabled:
@@ -307,6 +307,8 @@ def process_deals_with_xero_invoice_number_sync(
 
     hs = HubSpotClient(settings.hubspot_access_token)
     extra = deal_xero_sync_read_property_names(settings)
+    if (settings.hubspot_xero_invoice_sync_dealstage_eq or "").strip():
+        extra = list(dict.fromkeys(extra + ["dealstage"]))
     seen_ids: set[str] = set()
     deal_ids: list[str] = []
 
@@ -322,6 +324,9 @@ def process_deals_with_xero_invoice_number_sync(
         if prop and _deal_row_skip_for_invoice_batch_sync(row, prop=prop, settings=settings):
             return
         props = row.get("properties") or {}
+        ds_need = (settings.hubspot_xero_invoice_sync_dealstage_eq or "").strip()
+        if ds_need and (props.get("dealstage") or "").strip() != ds_need:
+            return
         if skip_paid and hubspot_invoice_status_is_paid(props, settings):
             return
         seen_ids.add(did)
@@ -363,6 +368,7 @@ def process_deals_with_xero_invoice_number_sync(
                 extra_properties=extra,
                 limit=page_limit,
                 after=after,
+                dealstage_eq=(settings.hubspot_xero_invoice_sync_dealstage_eq or "").strip() or None,
             )
             for row in batch:
                 if len(deal_ids) >= max_deals:

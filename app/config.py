@@ -41,10 +41,13 @@ class Settings(BaseSettings):
     # In-process timer: pull Xero status for deals with hubspot_deal_prop_xero_invoice_number set (HAS_PROPERTY).
     # Set to 0 to disable the background loop (e.g. use Railway cron on /api/cron/sync-xero-by-invoice-number only).
     # Use a single uvicorn worker if you enable this, or each worker would run its own loop.
-    hubspot_xero_invoice_number_sync_interval_seconds: int = 0
+    # Background batch sync cadence (seconds). 5400 = every 90 minutes. Set 0 to disable the in-process timer only.
+    hubspot_xero_invoice_number_sync_interval_seconds: int = 5400
     hubspot_xero_invoice_number_sync_max_deals: int = 150
-    # When true: no invoice-number batch sync (in-process timer + POST /api/cron/sync-xero-by-invoice-number). Default off to avoid rate limits.
-    hubspot_xero_invoice_number_sync_disabled: bool = True
+    # When true: no invoice-number batch sync (in-process timer + POST /api/cron/sync-xero-by-invoice-number).
+    hubspot_xero_invoice_number_sync_disabled: bool = False
+    # HubSpot internal deal stage id for batch sync (dealstage EQ). E.g. Closed Lost — confirm under Settings → Deals → Pipelines (not always the label text).
+    hubspot_xero_invoice_sync_dealstage_eq: str = "closedlost"
     # When true: POST /api/cron/sync-xero (pending trigger/sync_with_xero) is a no-op. Webhooks + per-deal API sync unchanged.
     hubspot_xero_pending_sync_cron_disabled: bool = True
     # Comma-separated values (case-insensitive exact match). Deals with this Xero invoice number are never synced from Xero.

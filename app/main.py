@@ -186,6 +186,7 @@ def api_status():
             "hubspot_xero_skip_sync_when_status_paid": None,
             "hubspot_xero_invoice_number_sync_use_hubspot_filters": None,
             "hubspot_xero_invoice_sync_include_id_without_number": None,
+            "hubspot_xero_invoice_sync_dealstage_eq": None,
             "error": str(e),
         }
     return {
@@ -208,6 +209,7 @@ def api_status():
         "hubspot_xero_skip_sync_when_status_paid": s.hubspot_xero_skip_sync_when_status_paid,
         "hubspot_xero_invoice_number_sync_use_hubspot_filters": s.hubspot_xero_invoice_number_sync_use_hubspot_filters,
         "hubspot_xero_invoice_sync_include_id_without_number": s.hubspot_xero_invoice_sync_include_id_without_number,
+        "hubspot_xero_invoice_sync_dealstage_eq": s.hubspot_xero_invoice_sync_dealstage_eq,
         "defaults": {
             "sales_account": s.xero_sales_account_code,
             "item_code": s.xero_item_code,
