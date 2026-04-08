@@ -102,8 +102,26 @@ async def lifespan(app: FastAPI):
     if interval > 0 and not disabled:
         task = asyncio.create_task(_xero_invoice_number_sync_background_loop(interval))
         _log_app.info("xero_invoice_number_sync_timer started (interval=%ss)", interval)
+        print(
+            json.dumps(
+                {
+                    "startup": "hubspot_xero_bridge",
+                    "xero_invoice_number_sync_timer": "started",
+                    "interval_seconds": interval,
+                }
+            ),
+            flush=True,
+        )
     elif interval > 0 and disabled:
-        _log_app.info("xero_invoice_number_sync_timer not started (hubspot_xero_invoice_number_sync_disabled=true)")
+        _log_app.info(
+            "xero_invoice_number_sync_timer not started (HUBSPOT_XERO_INVOICE_NUMBER_SYNC_DISABLED=true, interval=%ss)",
+            interval,
+        )
+    else:
+        _log_app.info(
+            "xero_invoice_number_sync_timer not started (interval_seconds=%s — set HUBSPOT_XERO_INVOICE_NUMBER_SYNC_INTERVAL_SECONDS e.g. 5400 for 90min, and DISABLED=false)",
+            interval,
+        )
     yield
     if task:
         task.cancel()
